@@ -1,0 +1,8 @@
+LOCATE COMP "clk" SITE "P3";
+IOBUF PORT "clk" IO_TYPE=LVCMOS33;
+
+LOCATE COMP "led" SITE "A13";
+IOBUF PORT "led" IO_TYPE=LVCMOS33;
+
+# Set a very aggressive frequency constraint
+FREQUENCY PORT "clk" 100.0 MHz;

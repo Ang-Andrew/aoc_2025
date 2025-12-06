@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+
+# FPGA/Hardware
+*.vcd
+*.bit
+*.config
+*.json
+*.log
+day1/hw/output/
+day1/hw/sim_build/
+day1/hw/__pycache__/
+day1/hw/verif/__pycache__/
+
+# Mac
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Custom
+report.json
+results.xml
