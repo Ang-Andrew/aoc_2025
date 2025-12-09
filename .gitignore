@@ -26,3 +26,4 @@ day1/hw/verif/__pycache__/
 # Custom
 report.json
 results.xml
+agent/
