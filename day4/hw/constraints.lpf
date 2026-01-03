@@ -1,0 +1,6 @@
+LOCATE COMP "clk" SITE "P3";
+IOBUF PORT "clk" IO_TYPE=LVCMOS33;
+
+# Add other pin constraints here
+# LOCATE COMP "reset" SITE "..."
+# ...
