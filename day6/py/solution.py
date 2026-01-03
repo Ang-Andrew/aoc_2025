@@ -54,13 +54,31 @@ def solve(filename):
             if not token:
                 continue
             
-            if token in ['+', '*']:
-                op = token
-            else:
-                try:
-                    numbers.append(int(token))
-                except ValueError:
-                    pass # Should not happen based on problem
+            # Improved parsing to handle cases like '123+' or '123*'
+            # Scan the token for numbers and operators.
+            # Simple regex-like logic or manual scan.
+            idx = 0
+            curr_num_str = ""
+            while idx < len(token):
+                char = token[idx]
+                if char.isdigit():
+                    curr_num_str += char
+                elif char in ['+', '*']:
+                    # If we had a number accumulating, push it
+                    if curr_num_str:
+                        numbers.append(int(curr_num_str))
+                        curr_num_str = ""
+                    op = char
+                else:
+                    # Ignore other chars? Or if space (should verify strip logic)
+                    if curr_num_str:
+                        numbers.append(int(curr_num_str))
+                        curr_num_str = ""
+                idx += 1
+            
+            # End of token
+            if curr_num_str:
+                numbers.append(int(curr_num_str))
         
         if op == '+':
             val = sum(numbers)
@@ -76,9 +94,6 @@ def solve(filename):
     return total
 
 if __name__ == "__main__":
-    ex_result = solve("../input/example.txt")
-    print(f"Example Result: {ex_result}")
-    
     try:
         real_result = solve("../input/input.txt")
         print(f"Real Result: {real_result}")

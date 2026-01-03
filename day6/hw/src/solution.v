@@ -160,6 +160,10 @@ module solution (
                             current_val <= current_val * 10 + (char_read - "0");
                             val_valid <= 1;
                         end else if (char_read == "+" || char_read == "*") begin
+                            if (val_valid) begin
+                                operands[op_count] <= current_val;
+                                op_count <= op_count + 1;
+                            end
                             op_char <= char_read;
                             val_valid <= 0;
                             current_val <= 0;
