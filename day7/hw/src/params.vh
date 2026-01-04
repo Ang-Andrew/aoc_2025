@@ -1,3 +1,3 @@
-localparam WIDTH = 15;
-localparam HEIGHT = 16;
-localparam MEM_SIZE = 240;
+localparam WIDTH = 141;
+localparam HEIGHT = 142;
+localparam MEM_SIZE = 20022;
