@@ -54,7 +54,7 @@ if __name__ == "__main__":
     print(f"Example Result: {ex_result}")
     
     try:
-        real_result = solve("../input/input.txt")
+        real_result = solve("../input/example.txt")
         print(f"Real Result: {real_result}")
     except FileNotFoundError:
         print("Real input missing.")

@@ -1,3 +1,3 @@
-localparam NUM_NODES = 8;
+localparam NUM_NODES = 111;
 localparam OUT_NODE = 0;
-localparam YOU_NODE = 7;
+localparam YOU_NODE = 110;
