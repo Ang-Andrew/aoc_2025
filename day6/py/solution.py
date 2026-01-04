@@ -95,7 +95,7 @@ def solve(filename):
 
 if __name__ == "__main__":
     try:
-        real_result = solve("../input/input.txt")
+        real_result = solve("../input/example.txt")
         print(f"Real Result: {real_result}")
     except FileNotFoundError:
         print("Real input not found.")
