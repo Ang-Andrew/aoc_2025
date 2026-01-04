@@ -9,15 +9,21 @@ module solution (
     `include "params.vh"
     
     // RAM
-    reg [31:0] points [0:NUM_POINTS-1];
+    // 64-bit words: [X:32, Y:32]
+    reg [63:0] points [0:NUM_POINTS-1];
     
     initial begin
         $readmemh("../input/input.hex", points);
     end
     
     integer i, j;
-    reg [15:0] xi, yi, xj, yj;
-    reg [31:0] dx, dy; // 32-bit to prevent overflow during abs/add
+    reg [31:0] xi, yi, xj, yj; // Expanded to 32-bit
+    reg [31:0] dx, dy; 
+    
+    // Architecture Note:
+    // Expanding 'area' to 64-bit prevents overflow for results > 2^32.
+    // Trade-off: On FPGAs with 18x18 or 25x18 DSP slices, a 32x32 multiply
+    // requires cascaded DSPs.
     reg [63:0] area;
     
     localparam S_INIT = 0;
@@ -30,7 +36,7 @@ module solution (
 
     // Abs helpers
     function [31:0] abs_diff;
-        input [15:0] a, b;
+        input [31:0] a, b;
         begin
             if (a > b) abs_diff = a - b;
             else abs_diff = b - a;
@@ -54,8 +60,8 @@ module solution (
                         state <= S_DONE;
                         done <= 1;
                     end else begin
-                        xi <= points[i][31:16];
-                        yi <= points[i][15:0];
+                        xi <= points[i][63:32];
+                        yi <= points[i][31:0];
                         j <= i + 1; // Start inner loop
                         state <= S_FETCH_J;
                     end
@@ -67,8 +73,8 @@ module solution (
                         i <= i + 1;
                         state <= S_FETCH_I;
                     end else begin
-                        xj <= points[j][31:16];
-                        yj <= points[j][15:0];
+                        xj <= points[j][63:32];
+                        yj <= points[j][31:0];
                         state <= S_CALC;
                     end
                 end
@@ -77,7 +83,8 @@ module solution (
                     // Compute Area
                     dx = abs_diff(xi, xj) + 1;
                     dy = abs_diff(yi, yj) + 1;
-                    area = dx * dy;
+                    // Force 64-bit arthimetic context
+                    area = {32'b0, dx} * {32'b0, dy};
                     
                     if (area > max_area) begin
                         max_area <= area;

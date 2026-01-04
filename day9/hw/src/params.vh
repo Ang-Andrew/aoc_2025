@@ -1,1 +1,1 @@
-localparam NUM_POINTS = 8;
+localparam NUM_POINTS = 496;
