@@ -5,16 +5,25 @@ __pycache__/
 venv/
 .venv/
 
-# FPGA/Hardware
+# Hardware / Verilog / Verilator / FPGA
+obj_dir/
+build/
+sim_build/
+output/
 *.vcd
 *.bit
 *.config
-*.json
 *.log
-day1/hw/output/
-day1/hw/sim_build/
-day1/hw/__pycache__/
-day1/hw/verif/__pycache__/
+*.jou
+*.str
+*.sv.d
+*.v.d
+
+# FPGA Tooling (General)
+# Ignoring all JSON except package/tsconfig if they exist
+*.json
+!package.json
+!tsconfig.json
 
 # Mac
 .DS_Store
@@ -26,4 +35,3 @@ day1/hw/verif/__pycache__/
 # Custom
 report.json
 results.xml
-
