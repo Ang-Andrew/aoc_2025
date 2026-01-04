@@ -48,7 +48,7 @@ def generate_hex(input_path):
                 f.write(f"{row_val:08X}\n")
 
 if __name__ == '__main__':
-    input_path = '../input/input.txt'
+    input_path = '../input/example.txt'
     if not os.path.exists(input_path):
         input_path = '../input/example.txt'
         print("Using example.txt")
