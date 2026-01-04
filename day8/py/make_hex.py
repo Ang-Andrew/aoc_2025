@@ -46,7 +46,7 @@ def generate_hex(input_path, k_limit):
         f.write(f"localparam K_LIMIT = {k_limit};\n")
 
 if __name__ == '__main__':
-    input_path = '../input/input.txt'
+    input_path = '../input/example.txt'
     k = 1000
     if not os.path.exists(input_path):
         input_path = '../input/example.txt'

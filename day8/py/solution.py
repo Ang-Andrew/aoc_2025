@@ -116,7 +116,7 @@ if __name__ == "__main__":
     
     # Real input K=1000
     try:
-        real_result = solve("../input/input.txt", 1000)
+        real_result = solve("../input/example.txt", 1000)
         print(f"Real Result (K=1000): {real_result}")
     except FileNotFoundError:
         print("Real input not found.")

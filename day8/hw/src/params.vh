@@ -1,3 +1,3 @@
-localparam NUM_NODES = 20;
-localparam NUM_EDGES = 10;
-localparam K_LIMIT = 10;
+localparam NUM_NODES = 1000;
+localparam NUM_EDGES = 1000;
+localparam K_LIMIT = 1000;
