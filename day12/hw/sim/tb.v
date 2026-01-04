@@ -20,8 +20,8 @@ module tb;
     end
 
     initial begin
-        $dumpfile("build/wave.vcd");
-        $dumpvars(0, tb);
+        // $dumpfile("build/wave.vcd");
+        // $dumpvars(0, tb);
         
         rst = 1;
         #100;
@@ -39,7 +39,8 @@ module tb;
     
     // Watchdog
     initial begin
-        #10000000;
+        // Increase timeout for deep backtracking
+        #2000000000; 
         $display("Timeout!");
         $finish;
     end

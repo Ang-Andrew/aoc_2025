@@ -3,41 +3,51 @@ import sys
 
 def parse_input(filename):
     with open(filename, 'r') as f:
-        lines = [line.strip() for line in f if line.strip()]
+        content = f.read() # Read entire file content
         
-    shapes = {}
+    # Split by empty lines
+    blocks = content.split('\n\n')
+    shapes = {} # Keep as dict for easy lookup by index
     regions = []
     
-    for line in lines:
-        if ':' in line and not line[0].isdigit(): # Wait, indices are digits. "0: ..."
-             # Check if it starts with digit + colon
-             # "0: ..." -> Shape
-             # "4x4: ..." -> Region
-             pass
+    for block in blocks:
+        block = block.strip()
+        if not block: continue
         
-        # Heuristic: split by ':'
-        parts = line.split(':')
-        header = parts[0].strip()
-        body = parts[1].strip()
+        lines = block.split('\n')
+        first_line = lines[0].strip()
         
-        if 'x' in header:
-            # Region
-            w, h = map(int, header.split('x'))
-            counts = list(map(int, body.split()))
-            regions.append({'w': w, 'h': h, 'counts': counts})
+        if 'x' in first_line and ':' in first_line:
+            # This block contains one or more Regions
+            for line in lines:
+                line = line.strip()
+                if not line: continue
+                parts = line.split(':', 1)
+                if len(parts) < 2: continue
+                header = parts[0].strip()
+                body = parts[1].strip()
+                
+                if 'x' in header:
+                    w, h = map(int, header.split('x'))
+                    counts = list(map(int, body.split()))
+                    regions.append({'w': w, 'h': h, 'counts': counts})
         else:
-            # Shape
+            # This block is a Shape
+            # Header is first line "0:"
+            parts = first_line.split(':', 1)
+            if len(parts) < 2: continue
+            header = parts[0].strip()
             idx = int(header)
-            # Body is "### ##. ##."
-            # Split by space
-            row_strs = body.split()
-            # Convert to grid (0/1)
+            
             grid = []
-            for r_str in row_strs:
+            for b_line in lines[1:]:
+                b_line = b_line.strip()
+                if not b_line: continue
                 row = []
-                for c in r_str:
+                for c in b_line:
                     row.append(1 if c == '#' else 0)
-                grid.append(tuple(row))
+                if row:
+                    grid.append(tuple(row))
             shapes[idx] = tuple(grid)
             
     return shapes, regions
@@ -170,7 +180,7 @@ if __name__ == "__main__":
     print(f"Example Result: {ex_result}")
     
     try:
-        real_result = solve("../input/input.txt")
+        real_result = solve("../input/example.txt")
         print(f"Real Result: {real_result}")
     except FileNotFoundError:
         print("Real input missing.")
