@@ -6,8 +6,11 @@ module solution (
     output reg [63:0] total_count,
     output reg done
 );
+    // Parameters
+    parameter MEM_SIZE = 4096; // Default 16KB words (Fits in BRAM)
+    
     // Data Memories
-    reg [31:0] mem [0:262143];       // Input Problems (256K)
+    reg [31:0] mem [0:MEM_SIZE-1];       // Input Problems
     reg [31:0] shape_mem [0:4095];   // Shape Variations
     reg [31:0] shape_idx_mem [0:63]; // Shape ID -> {Start, Count}
     

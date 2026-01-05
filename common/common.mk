@@ -24,9 +24,12 @@ OUTPUT_DIR ?= output
 # Implementation Targets
 impl: $(OUTPUT_DIR)/$(PROJ).bit
 
+
+TOP_MODULE ?= top
+
 $(OUTPUT_DIR)/$(PROJ).json: $(IMPL_SOURCES)
 	mkdir -p $(OUTPUT_DIR)
-	$(DOCKER_CMD) yosys -p "synth_ecp5 -top top -json $@" $(IMPL_SOURCES) 2>&1 | tee $(OUTPUT_DIR)/synthesis.log
+	$(DOCKER_CMD) yosys -p "synth_ecp5 -top $(TOP_MODULE) -json $@" $(IMPL_SOURCES) 2>&1 | tee $(OUTPUT_DIR)/synthesis.log
 
 $(OUTPUT_DIR)/$(PROJ)_out.config: $(OUTPUT_DIR)/$(PROJ).json $(LPF_FILE)
 	$(DOCKER_CMD) nextpnr-ecp5 --25k --package CABGA381 --speed 6 --json $(OUTPUT_DIR)/$(PROJ).json --lpf $(LPF_FILE) --textcfg $@ --freq 250 --report $(OUTPUT_DIR)/report.json 2>&1 | tee $(OUTPUT_DIR)/impl.log

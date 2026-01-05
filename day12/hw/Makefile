@@ -23,3 +23,14 @@ run: $(TARGET)
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+# Synthesis / Implementation
+PROJ = solution
+TOP_MODULE = solution
+IMPL_SOURCES = $(SRC_DIR)/solution.v
+LPF_FILE = $(SRC_DIR)/ulx3s_v20.lpf
+
+include ../../common/common.mk
+
+synth-impl:
+	$(MAKE) impl
