@@ -1,3 +1,5 @@
+/* verilator lint_off BLKSEQ */
+/* verilator lint_off UNUSEDSIGNAL */
 module solution (
     input clk,
     input rst,
@@ -5,13 +7,9 @@ module solution (
     output reg done
 );
     // Data Memories
-    reg [31:0] mem [0:1023];       // For tiny/smaller tests, use small buffer
-    reg [31:0] shape_mem [0:1023]; 
-    reg [31:0] shape_idx_mem [0:15]; 
-    
-    // Stack: stores {VariationIdx(32), Position(32)}
-    // Depth max ~400
-    reg [63:0] stack [0:511];
+    reg [31:0] mem [0:262143];       // Input Problems (256K)
+    reg [31:0] shape_mem [0:4095];   // Shape Variations
+    reg [31:0] shape_idx_mem [0:63]; // Shape ID -> {Start, Count}
     
     initial begin
         $readmemh("input.hex", mem);
@@ -19,293 +17,305 @@ module solution (
         $readmemh("shape_idx.hex", shape_idx_mem);
     end
     
-    // Grid State
-    reg [0:2499] grid; // 50x50 max
-    
     // Problem Vars
-    integer prob_idx;
-    integer num_probs;
+    integer prob_idx, num_probs;
     integer W, H, NumItems;
-    integer prob_ptr;
-    integer items_ptr; // Points to start of items in 'mem'
+    integer prob_ptr, items_ptr;
     
-    // Iteration Vars
+    // Search State
     integer depth;
-    integer shape_id;
-    integer var_start, var_count;
-    integer var_idx; // 0..var_count-1
-    integer pos; // 0..W*H-1
+    integer cur_v; 
     
-    // Current Shape Vars
+    // Current Placement Position
+    integer cur_r, cur_c; 
+    
+    // Current Shape Data
+    reg [31:0] s_packed;
     reg [31:0] s_w, s_h;
     reg [63:0] s_mask;
+    integer var_start, var_count, shape_id;
+    integer prev_shape_id; // For symmetry breaking
+
+    // Grid: 50x50. Bit 49=Col 0, Bit 0=Col 49.
+    reg [49:0] grid [0:49];
     
-    // State Machine
-    localparam S_INIT = 0;
-    localparam S_LOAD_PROB = 1;
-    localparam S_INIT_SEARCH = 2; // Setup depth 0
-    localparam S_LOAD_ITEM = 3;   // Get item for current depth
-    localparam S_TRY_FIT = 4;     // Check if current Var/Pos fits
-    localparam S_PLACE = 5;       // Fit! Update grid, push stack
-    localparam S_BACKTRACK = 6;   // Pop stack, undo
-    localparam S_NEXT_CHOICE = 7; // Increment Pos/Var
-    localparam S_DONE_PROB = 8;
-    localparam S_ALL_DONE = 9;
-    
-    reg [3:0] state;
-    
-    // Temporaries for checking
-    integer r_chk, c_chk;
+    // Stack: Store {ShapeID(16), VarIdx(16), R(16), C(16)}
+    // Actually we fit R, C in 8 bits each.
+    // Stack: {ShapeID[15:0], VarIdx[15:0], R[15:0], C[15:0]}
+    reg [63:0] stack [0:511]; 
+
+    // Helpers
     reg collision;
-    integer mr; // mask row
-    integer abs_pos;
-    reg [7:0] mask_row_bits;
-    integer cur_r, cur_c;
+    reg [49:0] row_mask;
+    reg [7:0] rev_row;
+    integer mr, i;
     integer base_addr;
-    
-    // Helper to get raw shape data
-    // shape_mem layout: [Count] global, then [W, H, low, high] per var.
-    // var_start points to start of W word.
-    // Each var is 4 words.
-    // Address = 1 (skip count) + var_ptr * 4 + offset
-    
+    integer debug_cnt;
+    reg is_same_shape;
+
+    // FSM
+    localparam S_START        = 0;
+    localparam S_FETCH_PROB   = 1;
+    localparam S_INIT_ITEM    = 2; // Setup scan range for new item
+    localparam S_FETCH_VAR    = 3; // Load shape variation
+    localparam S_CHECK_FIT    = 4; // Check collision at cur_r, cur_c
+    localparam S_NEXT_POS     = 5; // Move to next position (r, c)
+    localparam S_PLACE_MOVE   = 6; // Valid! Place and recurse
+    localparam S_NEXT_VAR     = 7; // Try next variation
+    localparam S_BACKTRACK    = 8;
+    localparam S_UNDO_FETCH   = 9;
+    localparam S_UNDO_GRID    = 10;
+    localparam S_FINISH_PROB  = 11;
+    localparam S_DONE_ALL     = 12;
+
+    reg [3:0] state;
+
     always @(posedge clk) begin
         if (rst) begin
             total_count <= 0;
             done <= 0;
-            state <= S_INIT;
-            prob_ptr <= 1; // Skip num_probs at 0
+            state <= S_START;
+            prob_ptr <= 1;
+            debug_cnt <= 0;
         end else begin
             case (state)
-                S_INIT: begin
+                S_START: begin
+                    if (debug_cnt == 0) $display("SIM START: Reset active.");
                     num_probs = mem[0];
                     prob_idx <= 0;
                     prob_ptr <= 1;
-                    state <= S_LOAD_PROB;
+                    state <= S_FETCH_PROB;
                 end
-                
-                S_LOAD_PROB: begin
+
+                S_FETCH_PROB: begin
                     if (prob_idx >= num_probs) begin
-                        state <= S_ALL_DONE;
+                        state <= S_DONE_ALL;
                         done <= 1;
                     end else begin
-                        // Read Header {W, H} {NumItems}
-                        // mem[prob_ptr] is packed W:16, H:16
-                        W = mem[prob_ptr][31:16];
-                        H = mem[prob_ptr][15:0];
+                        W = {16'b0, mem[prob_ptr][31:16]};
+                        H = {16'b0, mem[prob_ptr][15:0]};
                         NumItems = mem[prob_ptr+1];
                         items_ptr = prob_ptr + 2;
-                        
-                        // Advance prob_ptr for next time
-                        prob_ptr = prob_ptr + 2 + NumItems; 
-                        
-                        // Init Search
-                        grid <= 0;
+                        for (i=0; i<50; i=i+1) grid[i] <= 0;
                         depth <= 0;
-                        
-                        // Init Stack[0] vars to 0
-                        var_idx <= 0;
-                        pos <= 0;
-                        
-                        state <= S_LOAD_ITEM;
+                        state <= S_INIT_ITEM;
                     end
                 end
-                
-                S_LOAD_ITEM: begin
-                    // Check if solution found
+
+                S_INIT_ITEM: begin
                     if (depth == NumItems) begin
-                        // Success!
-                        total_count <= total_count + 1; // Count solutions? Or just 1 per problem?
-                        // Problem asks "how many regions can fit...". Usually means "Is it solvable?". 
-                        // Wait, "how many OF the regions can fit". Simple count of solvable problems.
-                        // So if we find solution, we are done with this problem.
-                        state <= S_DONE_PROB; 
+                        total_count <= total_count + 1;
+                        state <= S_FINISH_PROB;
                     end else begin
-                        // Get Shape ID for this depth
                         shape_id = mem[items_ptr + depth];
                         
-                        // Look up variations
-                        // shape_idx_mem: {Start:16, Count:16}
-                        var_start = shape_idx_mem[shape_id][31:16];
-                        var_count = shape_idx_mem[shape_id][15:0];
+                        // Symmetry Breaking: If same shape as prev, start after prev pos
+                        is_same_shape = 0;
+                        cur_r = 0; 
+                        cur_c = 0;
                         
-                        // If resuming (backtracked), use stack values.
-                        // But logic handles that in S_NEXT_CHOICE.
-                        // Here we just load the shape params for the current stack choice.
-                        
-                        // Load Shape Data from ROM
-                        // var_idx is current attempt
-                        // Addr = 1 + (var_start + var_idx) * 4
-                        // But wait, flattened idx? Yes.
-                        // Let's assume shape_idx_mem stores global index into variation array.
-                        
-                        // integer base_addr; // MOVED TO TOP
-                        base_addr = 1 + (var_start + var_idx) * 4;
-                        s_w = shape_mem[base_addr];
-                        s_h = shape_mem[base_addr+1];
-                        s_mask[31:0] = shape_mem[base_addr+2];
-                        s_mask[63:32] = shape_mem[base_addr+3];
-                        
-                        state <= S_TRY_FIT;
-                    end
-                end
-                
-                S_TRY_FIT: begin
-                    // Check bounds and collision
-                    // pos is linear index r*W + c
-                    cur_r = pos / W;
-                    cur_c = pos % W;
-                    
-                    // Boundary check: Bottom and Right
-                    if ((cur_r + s_h > H) || (cur_c + s_w > W)) begin
-                        collision = 1;
-                    end else begin
-                        // Collision Check
-                        collision = 0;
-                        for (mr = 0; mr < s_h; mr = mr + 1) begin
-                            // Shift grid row
-                            abs_pos = (cur_r + mr) * W + cur_c;
-                            
-                            // Mask row is 8 bits from s_mask >> (mr*8)
-                            mask_row_bits = (s_mask >> (mr * 8)) & 8'hFF;
-                            
-                            // Check grid bits at abs_pos .. abs_pos+s_w
-                            // In Verilog vector: grid is [0..N]. simple shift: grid >> (size - 1 - index)?
-                            // Using Big Endian indexing [0:2499]. Bit 0 is top-left.
-                            // To access range [abs_pos]:
-                            // (grid >> (2499 - (abs_pos + k))) & 1
-                            // Actually pure vector select is hard with variable index.
-                            // Easier: Manual bit check loop.
-                            for (c_chk = 0; c_chk < s_w; c_chk = c_chk + 1) begin
-                                if ((mask_row_bits >> c_chk) & 1) begin
-                                    if (grid[abs_pos + c_chk]) collision = 1;
-                                end
-                            end
+                        if (depth > 0) begin
+                             // Unpack prev shape id (High 16 bits of stack word?)
+                             // Stack: {ShapeID[15:0], VarIdx[15:0], cur_r[15:0], cur_c[15:0]}
+                             prev_shape_id = {16'b0, stack[depth-1][63:48]};
+                             if (prev_shape_id == shape_id) begin
+                                 is_same_shape = 1;
+                                 cur_r = {16'b0, stack[depth-1][31:16]};
+                                 cur_c = {16'b0, stack[depth-1][15:0]};
+                                 
+                                 // Advance by 1
+                                 cur_c = cur_c + 1;
+                                 if (cur_c >= W) begin
+                                     cur_c = 0;
+                                     cur_r = cur_r + 1;
+                                 end
+                             end
                         end
+                        
+                        cur_v <= 0;
+                        state <= S_FETCH_VAR;
                     end
+                end
+
+                S_FETCH_VAR: begin
+                    var_start = {16'b0, shape_idx_mem[shape_id][31:16]};
+                    var_count = {16'b0, shape_idx_mem[shape_id][15:0]};
                     
-                    if (collision == 0) begin
-                        state <= S_PLACE;
+                    if (cur_v >= var_count) begin
+                        state <= S_BACKTRACK;
                     end else begin
-                        state <= S_NEXT_CHOICE;
-                    end
-                end
-                
-                S_PLACE: begin
-                    // Update Grid (XOR)
-                    // Re-calculate loop to set bits (Hardware would parallelize this)
-                    cur_r = pos / W;
-                    cur_c = pos % W;
-                    for (mr = 0; mr < s_h; mr = mr + 1) begin
-                        abs_pos = (cur_r + mr) * W + cur_c;
-                        mask_row_bits = (s_mask >> (mr * 8)) & 8'hFF;
-                        for (c_chk = 0; c_chk < s_w; c_chk = c_chk + 1) begin
-                            if ((mask_row_bits >> c_chk) & 1) begin
-                                grid[abs_pos + c_chk] = 1;
-                            end
-                        end
-                    end
-                    
-                    // Push to Stack
-                    // Stack stores move we JUST made
-                    stack[depth][63:32] = var_idx;
-                    stack[depth][31:0] = pos;
-                    
-                    // Advance
-                    depth <= depth + 1;
-                    // Reset next level choices
-                    var_idx <= 0;
-                    pos <= 0;
-                    
-                    state <= S_LOAD_ITEM;
-                end
-                
-                S_NEXT_CHOICE: begin
-                    // Try next Position
-                    pos <= pos + 1;
-                    if (pos >= W*H) begin
-                        // Reset pos, try next Variation
-                        pos <= 0;
-                        var_idx <= var_idx + 1;
-                        if (var_idx >= var_count) begin
-                            // All variations exhausted -> Backtrack
-                            state <= S_BACKTRACK;
+                        base_addr = 1 + (var_start + cur_v) * 4;
+                        s_packed <= shape_mem[base_addr];
+                        s_h <= shape_mem[base_addr+1];
+                        s_mask[31:0] <= shape_mem[base_addr+2];
+                        s_mask[63:32] <= shape_mem[base_addr+3];
+                        
+                        // If checking new variation, reset pos to start (if NOT same shape)
+                        // If SAME shape, we keep pos >= prev pos regardless of variation
+                        // Wait, Python iterates variations THEN positions? 
+                        // "to_place_items" is list of vars. 
+                        // Python iterates vars, then positions.
+                        // But symmetry constraint applies to Items.
+                        // "If item is same as prev... start_pos = last_pos + 1".
+                        // This applies to the ITEM, regardless of which variation it picks.
+                        // So yes, for current Item (and Var), start from `prev_pos + 1` (if same).
+                        // If we are iterating Valid Pos, we start `cur_r/c` at Init.
+                        // If we fail check, we increment.
+                        // If we fail ALL positions, we try Next Var? 
+                        // YES. But Next Var starts scanning from... Where?
+                        // From the SAME start point!
+                        // So we should save `init_r, init_c`? 
+                        
+                        // Logic fix: S_INIT sets start point.
+                        // S_FETCH loads var.
+                        // We need to RESTORE start point in S_FETCH_VAR?
+                        // If `is_same_shape`, restore `prev_pos + 1`. Else `0`.
+                        
+                        if (depth > 0 && is_same_shape) begin
+                             // Re-calc start pos or use saved?
+                             // Just re-read stack
+                             cur_r = {16'b0, stack[depth-1][31:16]};
+                             cur_c = {16'b0, stack[depth-1][15:0]};
+                             cur_c = cur_c + 1;
+                             if (cur_c >= W) begin
+                                 cur_c = 0;
+                                 cur_r = cur_r + 1;
+                             end
                         end else begin
-                            // Reload shape data for new var
-                            // Go to Load is messy? Need to re-load S vars.
-                            // Can jump to LOAD_ITEM, it re-reads based on var_idx
-                            state <= S_LOAD_ITEM;
+                             cur_r = 0;
+                             cur_c = 0;
                         end
-                    end else begin
-                        // Just new pos, shape/var same
-                        state <= S_TRY_FIT;
+
+                        state <= S_CHECK_FIT;
                     end
                 end
+
+                S_CHECK_FIT: begin
+                    // Check bounds and grid
+                    // s_w is unpacked from s_packed[7:0] implicitly
+                    // Wait, we need to unpack s_w
+                    s_w = {24'b0, s_packed[7:0]};
+                    
+                    if (cur_r >= H) begin
+                        // Exhausted positions
+                        state <= S_NEXT_VAR;
+                    end else if (cur_r + s_h > H || cur_c + s_w > W) begin
+                        // Out of bounds (Width/Height)
+                        state <= S_NEXT_POS;
+                    end else begin
+                        // Check Grid Collision
+                        collision = 0;
+                        for (mr = 0; mr < 8; mr = mr + 1) begin
+                            if (mr < s_h) begin
+                                rev_row = {s_mask[mr*8], s_mask[mr*8+1], s_mask[mr*8+2], s_mask[mr*8+3], s_mask[mr*8+4], s_mask[mr*8+5], s_mask[mr*8+6], s_mask[mr*8+7]};
+                                row_mask = {rev_row, 42'b0} >> cur_c;
+                                if ((grid[cur_r+mr] & row_mask) != 0) collision = 1;
+                            end
+                        end
+                        
+                        if (!collision) state <= S_PLACE_MOVE;
+                        else state <= S_NEXT_POS;
+                    end
+                end
+
+                S_NEXT_POS: begin
+                    cur_c = cur_c + 1;
+                    if (cur_c >= W) begin
+                        cur_c = 0;
+                        cur_r = cur_r + 1;
+                    end
+                    state <= S_CHECK_FIT;
+                end
                 
+                S_PLACE_MOVE: begin
+                    // XOR Grid
+                    for (mr = 0; mr < 8; mr = mr + 1) begin
+                        if (mr < s_h) begin
+                            rev_row = {s_mask[mr*8], s_mask[mr*8+1], s_mask[mr*8+2], s_mask[mr*8+3], s_mask[mr*8+4], s_mask[mr*8+5], s_mask[mr*8+6], s_mask[mr*8+7]};
+                            row_mask = {rev_row, 42'b0} >> cur_c;
+                            grid[cur_r+mr] <= grid[cur_r+mr] ^ row_mask;
+                        end
+                    end
+                    // Push Stack: {ShapeID, VarIdx, R, C}
+                    stack[depth] <= {shape_id[15:0], cur_v[15:0], cur_r[15:0], cur_c[15:0]};
+                    depth <= depth + 1;
+                    
+                    if (debug_cnt < 2000 && prob_idx < 2) begin
+                        $display("Place: P%d D%d V%d at %d,%d", prob_idx, depth, cur_v, cur_r, cur_c);
+                        debug_cnt <= debug_cnt + 1;
+                    end
+                    
+                    state <= S_INIT_ITEM;
+                end
+
+                S_NEXT_VAR: begin
+                    cur_v <= cur_v + 1;
+                    state <= S_FETCH_VAR;
+                end
+
                 S_BACKTRACK: begin
                     if (depth == 0) begin
-                        // Search exhausted for this problem, no solution
-                        state <= S_DONE_PROB;
-                        // total_count not incremented
+                        state <= S_FINISH_PROB;
                     end else begin
-                        // Pop
                         depth <= depth - 1;
-                        
-                        // Restore state from stack
-                        var_idx = stack[depth-1][63:32]; // Wait, depth-1 is the level we are returning TO
-                        pos = stack[depth-1][31:0];
-                        
-                        // Wait, logic check:
-                        // depth was incremented. So stack[depth-1] holds the valid move we made.
-                        // We need to UNDO that move.
-                        
-                        // Re-load Item ID for the depth we are undoing
-                        shape_id = mem[items_ptr + (depth - 1)];
-                        var_start = shape_idx_mem[shape_id][31:16];
-                        
-                        // Re-load var params from stack var_idx
-                        // Use blocking assignment to get s_mask immediately for UNDO
-                        var_idx = stack[depth - 1][63:32];
-                        pos = stack[depth - 1][31:0];
-                        
-                        // integer base_addr;
-                        base_addr = 1 + (var_start + var_idx) * 4;
-                        s_w = shape_mem[base_addr];
-                        s_h = shape_mem[base_addr+1];
-                        s_mask[31:0] = shape_mem[base_addr+2];
-                        s_mask[63:32] = shape_mem[base_addr+3];
-                        
-                        // UNDO Grid (XOR mask again)
-                        cur_r = pos / W;
-                        cur_c = pos % W;
-                        for (mr = 0; mr < s_h; mr = mr + 1) begin
-                            abs_pos = (cur_r + mr) * W + cur_c;
-                            mask_row_bits = (s_mask >> (mr * 8)) & 8'hFF;
-                            for (c_chk = 0; c_chk < s_w; c_chk = c_chk + 1) begin
-                                if ((mask_row_bits >> c_chk) & 1) begin
-                                    grid[abs_pos + c_chk] = 0; // Clear it logic (since we know it was set)
-                                end
-                            end
-                        end
-                        
-                        // Now we are at the state "After processing move at depth-1".
-                        // We want to try the NEXT choice for this depth.
-                        // So go to S_NEXT_CHOICE.
-                        state <= S_NEXT_CHOICE;
+                        state <= S_UNDO_FETCH;
                     end
                 end
                 
-                S_DONE_PROB: begin
-                    $display("Solved Problem %d", prob_idx);
-                    prob_idx <= prob_idx + 1;
-                    state <= S_LOAD_PROB;
+                S_UNDO_FETCH: begin
+                    // Restore from stack to undo grid
+                    // Stack: {ShapeID, VarIdx, R, C}
+                    shape_id = {16'b0, stack[depth][63:48]}; // actually shape_id stored in top 16
+                    cur_v = {16'b0, stack[depth][47:32]};
+                    cur_r = {16'b0, stack[depth][31:16]};
+                    cur_c = {16'b0, stack[depth][15:0]};
+                    
+                    // Reload mask (Need to fetch from mem)
+                    var_start = {16'b0, shape_idx_mem[shape_id][31:16]};
+                    base_addr = 1 + (var_start + cur_v) * 4;
+                    
+                    // We need s_h and s_mask to undo
+                    s_packed <= shape_mem[base_addr]; 
+                    s_h <= shape_mem[base_addr+1];
+                    s_mask[31:0] <= shape_mem[base_addr+2];
+                    s_mask[63:32] <= shape_mem[base_addr+3];
+                    
+                    state <= S_UNDO_GRID;
                 end
-                
-                S_ALL_DONE: begin
-                    // Stick done
+
+                S_UNDO_GRID: begin
+                    for (mr = 0; mr < 8; mr = mr + 1) begin
+                        if (mr < s_h) begin
+                            rev_row = {s_mask[mr*8], s_mask[mr*8+1], s_mask[mr*8+2], s_mask[mr*8+3], s_mask[mr*8+4], s_mask[mr*8+5], s_mask[mr*8+6], s_mask[mr*8+7]};
+                            row_mask = {rev_row, 42'b0} >> cur_c;
+                            grid[cur_r+mr] <= grid[cur_r+mr] ^ row_mask;
+                        end
+                    end
+                    // After undo, try next variation?
+                    // No, we were iterating POSITIONS (?)
+                    // Wait, if we backtrack, we popped a state where we placed Item D at (R, C) using Var V.
+                    // We should try Next POS for Var V?
+                    // OR Next Var V+1?
+                    // Python: `for (base_mask...)`: `for shift...`
+                    // Inner loop matches Positions.
+                    // If recursive call returns, we continue Inner loop (Pos).
+                    // So we should goto S_NEXT_POS from S_UNDO_GRID.
+                    // But we must restore `cur_c, cur_r` correctly.
+                    // `S_UNDO_FETCH` restored them.
+                    
+                    state <= S_NEXT_POS;
+                end
+
+                S_FINISH_PROB: begin
+                    if (total_count % 1 == 0) $display("Solved %d (Total count %d)", prob_idx, total_count);
+                    prob_idx <= prob_idx + 1;
+                    prob_ptr <= items_ptr + NumItems;
+                    state <= S_FETCH_PROB;
+                end
+
+                S_DONE_ALL: begin
                 end
             endcase
         end
     end
-
 endmodule

@@ -82,7 +82,7 @@ def generate_hex(input_path):
     max_s_w = 0
     max_s_h = 0
     
-    variation_data = [] # List of (w, h, mask_int)
+    variation_data = [] # List of (w, h, mask, fr, fc)
     shape_map = {} # ID -> (start, count)
     
     sorted_shape_ids = sorted(shapes.keys())
@@ -105,11 +105,26 @@ def generate_hex(input_path):
             # where bit (r,c) is set.
             # HW will expand this to full grid width.
             for r in range(h):
+                row_mask = 0
                 for c in range(w):
                     if v[r][c]:
-                        mask |= (1 << (r * 8 + c)) # Store as 8-wide local bitmap
+                        # Piece Column 0 (Leftmost) -> Bit 0 (LSB)
+                        # Hardware will reverse this to MSB
+                        row_mask |= (1 << c)
+                mask |= (row_mask << (r * 8))
             
-            variation_data.append((w, h, mask))
+            # Calculate fr, fc here while we have v
+            fr, fc = 0, 0
+            found = False
+            for r in range(h):
+                for c in range(w):
+                    if v[r][c]:
+                        fr, fc = r, c
+                        found = True
+                        break
+                if found: break
+
+            variation_data.append((w, h, mask, fr, fc))
             
         shape_map[sid] = (start_idx, count)
         
@@ -121,18 +136,13 @@ def generate_hex(input_path):
     with open('../input/shapes.hex', 'w') as f:
         # First word: Count
         f.write(f"{len(variation_data):08X}\n")
-        for (w, h, m) in variation_data:
-            # Pack W(8), H(8), Mask(48)?
-            # Mask fits in 64 bits?
-            # 8x8 = 64.
-            # Note: Mask is 64 bit. W,H are separate.
-            # We can use multiple words or specific structure.
-            # Let's write: 
-            # W (32b)
-            # H (32b)
-            # MaskLow (32b)
-            # MaskHigh (32b)
-            f.write(f"{w:08X}\n")
+        for (w, h, m, fr, fc) in variation_data:
+            
+            # Write Packed Word 0: first_c(8) | first_r(8) | H(8) | W(8)
+            # Actually, let's just use existing slots.
+            # slot 0: W. lets make it packed.
+            packed_info = (fc << 24) | (fr << 16) | w
+            f.write(f"{packed_info:08X}\n")
             f.write(f"{h:08X}\n")
             f.write(f"{m & 0xFFFFFFFF :08X}\n")
             f.write(f"{(m >> 32) & 0xFFFFFFFF :08X}\n")
@@ -181,7 +191,18 @@ def generate_hex(input_path):
             
             # Sort by Area (descending) and ShapeID (ascending) for symmetry breaking
             items_with_area.sort(key=lambda x: (-x[0], x[1]))
-            sorted_items = [x[1] for x in items_with_area]
+            
+            # Check for Area Constraint
+            total_item_area = sum(x[0] for x in items_with_area)
+            if total_item_area > W * H:
+                # Impossible. Replace with trivial failure case.
+                # Grid 1x1. Item: Size > 1.
+                # Use the first item from sorted (largest).
+                W = 1
+                H = 1
+                sorted_items = [items_with_area[0][1]]
+            else:
+                sorted_items = [x[1] for x in items_with_area]
             
             f.write(f"{W:04X}{H:04X}\n") # W, H
             f.write(f"{len(sorted_items):08X}\n") # NumItems

@@ -16,33 +16,38 @@ int main(int argc, char **argv) {
 
   // 2. Reset for a few cycles
   for (int i = 0; i < 20; i++) {
-    top->clk = !top->clk;
+    top->clk = 1;
+    top->eval();
+    top->clk = 0;
     top->eval();
   }
   top->rst = 0;
 
   std::cout << "Simulation Started..." << std::endl;
 
-  // 3. Run search (Timeout at 10 million cycles for the tiny test)
+  // 3. Run search (10 Billion cycles limit)
   uint64_t cycles = 0;
-  while (!top->done && cycles < 10000000) {
+  while (!top->done && cycles < 10000000000ULL) {
     top->clk = 1;
     top->eval();
     top->clk = 0;
     top->eval();
     cycles++;
+    if (cycles % 100000000 == 0) {
+      std::cout << "Cycle Heartbeat: " << cycles / 1000000
+                << "M. total_count so far: " << top->total_count << std::endl;
+    }
   }
 
   // 4. Report
   if (top->done) {
     std::cout << "--------------------------------" << std::endl;
-    std::cout << "Simulation Done." << std::endl;
-    std::cout << "Valid Regions (Solutions found): " << top->total_count
-              << std::endl;
-    std::cout << "Total Cycles: " << cycles << std::endl;
+    std::cout << "Simulation Complete." << std::endl;
+    std::cout << "Final Total Valid Regions: " << top->total_count << std::endl;
+    std::cout << "Total Simulation Cycles: " << cycles << std::endl;
     std::cout << "--------------------------------" << std::endl;
   } else {
-    std::cout << "TIMEOUT: Simulation exceeded cycle limit." << std::endl;
+    std::cout << "TIMEOUT: Simulation exceeded 10 Billion cycles." << std::endl;
   }
 
   top->final();

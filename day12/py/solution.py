@@ -127,43 +127,38 @@ def can_fit(w, h, items, shapes):
             masks.append((base_mask, vh, vw))
         item_masks.append(masks)
         
-    def place(item_idx, current_grid_mask):
+    # Track if item is same as previous for symmetry breaking
+    is_same_as_prev = [False] * len(to_place)
+    for i in range(1, len(to_place)):
+        # to_place is (area, vars). If vars are same, it's same shape.
+        if to_place[i][1] == to_place[i-1][1]:
+            is_same_as_prev[i] = True
+
+    def place(item_idx, current_grid_mask, last_pos):
         if item_idx >= len(item_masks):
             return True
+        
+        start_pos = 0
+        if is_same_as_prev[item_idx]:
+            start_pos = last_pos + 1
             
-        # Try all variations and positions
-        # Optimization: Identify some cell that MUST be filled? 
-        # Only if TotalArea == RemainingArea. Not guaranteed.
-        
-        # Optimization: symmetry breaking?
-        # If multiple identical items, force order?
-        # to_place was flattened. If we have 2 copies of Shape 4, they are distinct items now.
-        # We can enforce that Item K+1's position > Item K's position if they are same shape.
-        # But `to_place` list doesn't track shape ID easily (it's flattened).
-        # We can rely on basic speed.
-        
         possible_masks = item_masks[item_idx]
         
         for (base_mask, vh, vw) in possible_masks:
-            # Try all positions (r, c)
-            for r in range(h - vh + 1):
-                for c in range(w - vw + 1):
-                    # Create shifted mask
-                    # Shift: r * w + c
-                    shift = r * w + c
-                    
-                    # Check efficient shift:
-                    # In python ints are infinite.
-                    m = base_mask << shift
-                    
-                    if not (current_grid_mask & m):
-                        # No collision
-                        if place(item_idx + 1, current_grid_mask | m):
-                            return True
-                            
+            for shift in range(start_pos, w * h):
+                r = shift // w
+                c = shift % w
+                
+                if r + vh > h or c + vw > w:
+                    continue
+                
+                m = base_mask << shift
+                if not (current_grid_mask & m):
+                    if place(item_idx + 1, current_grid_mask | m, shift):
+                        return True
         return False
 
-    return place(0, 0)
+    return place(0, 0, -1)
 
 def solve(filename):
     shapes, regions = parse_input(filename)
