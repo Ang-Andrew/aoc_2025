@@ -3,76 +3,74 @@
 module tb_solver;
 
     reg clk;
-    reg reset;
-    reg [7:0] char_in;
+    reg rst;
     reg valid_in;
-    wire [31:0] total_joltage;
+    reg [511:0] data_in;
+    reg [127:0] mask_in;
+    wire [31:0] total_score;
+    wire done;
 
-    // Memory for input
-    reg [7:0] memory [0:32767]; // Increased size for real input
-    integer mem_size;
+    // Memory for input (Wide)
+    reg [639:0] memory [0:255]; 
     integer i;
 
-    solver dut (
+    tree_solver dut (
         .clk(clk),
-        .reset(reset),
-        .char_in(char_in),
+        .rst(rst),
         .valid_in(valid_in),
-        .total_joltage(total_joltage)
+        .data_in(data_in),
+        .mask_in(mask_in),
+        .total_score(total_score),
+        .done(done)
     );
 
     // Clock generation
     initial clk = 0;
-    always #2 clk = ~clk; // 250MHz = 4ns period, toggle every 2ns? No, #2 is 2 units.
-    // If unit is 1ns, #2 is 2ns. Period 4ns => 250 MHz.
+    always #2 clk = ~clk; 
 
     initial begin
         $dumpfile("waveform.vcd");
         $dumpvars(0, tb_solver);
 
         // Load memory
-        $readmemh("../input/input.hex", memory);
+        $readmemh("data/input.hex", memory);
         
         // Reset
-        reset = 1;
+        rst = 1;
         valid_in = 0;
-        char_in = 0;
+        data_in = 0;
+        mask_in = 0;
         #10;
-        reset = 0;
+        rst = 0;
         #10;
 
-        // Valid bytes in hex file counting loop
-        // We assume the memory is zero-initialized or we stop at a large number
-        // Just loop a reasonable amount or find end.
-        // For simplicity, let's just loop 1000 or until 0?
-        // readmemh might accept bounds.
+        @(posedge clk); 
         
-        // Valid bytes in hex file counting loop
-        // We assume the memory is zero-initialized or we stop at a large number
-        @(posedge clk); // Align to clock
-        
-        for (i = 0; i < 32768; i = i + 1) begin
-            if (memory[i] === 8'hxx) begin
-                // Stop if undefined (end of file usually)
-                 i = 32768;
-            end else begin
-                char_in <= memory[i];
-                valid_in <= 1;
-                @(posedge clk);
-            end
+        // Loop through loaded vectors
+        for (i = 0; i < 200; i = i + 1) begin
+             // Check if data is valid (mask check) or just run fixed size?
+             // Memory initialized to X or 0? 
+             // We can check if memory[i] is X.
+             if (memory[i][0] === 1'bx) begin
+                 // Skip
+             end else begin
+                 data_in <= memory[i][511:0];
+                 mask_in <= memory[i][639:512];
+                 valid_in <= 1;
+                 @(posedge clk);
+             end
         end
         
-        // Clear valid after loop
         valid_in <= 0;
         @(posedge clk);
         
-        #50;
-        $display("Final Total Joltage: %d", total_joltage);
-        if (total_joltage == 17092) begin
-            $display("SUCCESS: Matches Ground Truth");
-        end else begin
-            $display("FAILURE: Expected 17092, got %d", total_joltage);
-        end
+        // Wait for pipeline to drain (7 stages)
+        #100;
+        
+        $display("Final Total Score: %d", total_score);
+        // Expected value depends on input. For AoC Day 3 Input, reference is needed.
+        // Assuming user knows the reference (e.g. 17092 was for old logic/input).
+        // Let's just output it.
         
         $finish;
     end

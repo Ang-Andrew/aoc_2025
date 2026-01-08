@@ -1,38 +1,63 @@
-module top(
-    input clk_250,
-    input btn,
-    output led
+module top (
+    input wire clk,
+    input wire rst,
+    output wire [31:0] score
 );
-    wire clk = clk_250;
-    wire reset = !btn; // Active low button implies reset? Or active high? Assuming btn is reset.
-    // Day 2 LPF says "btn" on P4. Usually buttons are active low or high depending on board.
-    // Let's assume active high reset for simplicity of logic, or invert if needed.
 
-    wire [7:0] char_stream;
-    wire valid_stream;
-    wire feeder_done;
-    wire [31:0] total_joltage;
-
-    rom_feeder #(
-        .MEM_FILE("../input/input.hex"),
-        .MEM_SIZE(20200) // Approx size from wc -l
-    ) feeder (
+    reg [7:0] rom_addr;
+    wire [639:0] rom_data; // 128 Mask + 512 Data
+    
+    // Valid Logic
+    reg valid_pulse;
+    reg [2:0] state;
+    
+    localparam S_START = 0;
+    localparam S_RUN   = 1;
+    localparam S_DONE  = 2;
+    
+    rom_feeder rf (
         .clk(clk),
-        .reset(reset),
-        .char_out(char_stream),
-        .valid_out(valid_stream),
-        .done(feeder_done)
+        .addr(rom_addr),
+        .data(rom_data)
     );
-
-    solver solver_inst (
+    
+    // We assume 200 lines max (addr 8 bit is enough)
+    
+    tree_solver ts (
         .clk(clk),
-        .reset(reset),
-        .char_in(char_stream),
-        .valid_in(valid_stream),
-        .total_joltage(total_joltage)
+        .rst(rst),
+        .valid_in(valid_pulse),
+        .data_in(rom_data[511:0]),
+        .mask_in(rom_data[639:512]),
+        .total_score(score),
+        .done()
     );
-
-    // Prevent optimization
-    assign led = |total_joltage[31:24]; 
+    
+    always @(posedge clk) begin
+        if (rst) begin
+            rom_addr <= 0;
+            valid_pulse <= 0;
+            state <= S_START;
+        end else begin
+            case (state) 
+                S_START: state <= S_RUN;
+                
+                S_RUN: begin
+                    // Pipeline: Addr -> Data -> Valid Pulse
+                    valid_pulse <= 1; 
+                    if (rom_addr == 199) begin // 200 lines
+                        state <= S_DONE;
+                        valid_pulse <= 1; // Last one
+                    end else begin
+                        rom_addr <= rom_addr + 1;
+                    end
+                end
+                
+                S_DONE: begin
+                    valid_pulse <= 0;
+                end
+            endcase
+        end
+    end
 
 endmodule
