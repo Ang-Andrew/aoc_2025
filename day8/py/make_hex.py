@@ -4,7 +4,7 @@ import os
 def eudist_sq(p1, p2):
     return (p1[0]-p2[0])**2 + (p1[1]-p2[1])**2 + (p1[2]-p2[2])**2
 
-def generate_hex(input_path, k_limit):
+def make_hex(input_path, k_shortest, output_path):
     with open(input_path, 'r') as f:
         points = []
         for line in f:
@@ -14,43 +14,38 @@ def generate_hex(input_path, k_limit):
                 
     N = len(points)
     
+    # Calculate all pair distances
     edges = []
     for i in range(N):
         for j in range(i+1, N):
             d = eudist_sq(points[i], points[j])
-            edges.append((d, i, j)) # d, u, v
+            edges.append((d, i, j))
             
-    # Sort
     edges.sort(key=lambda x: x[0])
     
-    # We only need top K edges for the hardware to process?
-    # Actually, "connect together the 1000 pairs... which are closest".
-    # So we feed EXACTLY K pairs to the hardware.
-    # The HW will just UNION them all.
-    # Logic check: "Because these two... were already in the same circuit, nothing happens!"
-    # This implies the HW just runs Union(u,v) K times.
+    # Write top K edges (u, v)
+    # Each u, v is log2(N) bits. Pack into 32 bits?
+    # Max N < 65536. 16 bits each.
     
-    edges_to_write = edges[:k_limit]
-    
-    # Write input.hex
-    # Each line: u (16 bit) v (16 bit) -> 32 bit hex
-    with open('../input/input.hex', 'w') as f:
-        for d, u, v in edges_to_write:
-            # 32-bit word: [u:16, v:16]
-            f.write(f"{u:04X}{v:04X}\n")
-            
-    # Write params.vh
+    with open(output_path, 'w') as f:
+        for i in range(min(len(edges), k_shortest)):
+             d, u, v = edges[i]
+             val = (u & 0xFFFF) | ((v & 0xFFFF) << 16)
+             f.write(f"{val:08X}\n")
+             
+    # Write params
     with open('../hw/src/params.vh', 'w') as f:
-        f.write(f"localparam NUM_NODES = {N};\n")
-        f.write(f"localparam NUM_EDGES = {len(edges_to_write)};\n")
-        f.write(f"localparam K_LIMIT = {k_limit};\n")
+        f.write(f"localparam N = {N};\n")
+        f.write(f"localparam K = {k_shortest};\n")
+        
+    print(f"Stats: N={N}, K={k_shortest}")
 
-if __name__ == '__main__':
-    input_path = '../input/example.txt'
+if __name__ == "__main__":
+    input_path = '../input/input.txt'
     k = 1000
     if not os.path.exists(input_path):
         input_path = '../input/example.txt'
         k = 10
-        print("Using example.txt")
+        print("Using example.txt with K=10")
         
-    generate_hex(input_path, k)
+    make_hex(input_path, k, '../input/edges.hex')

@@ -33,18 +33,18 @@
     - After K pairs:
         - Scan `Size` memory to find top 3.
 - *Pros*: Efficient use of FPGA for the path compression/union logic (pointer chasing). Avoids O(N^2) sort on chip.
-- *Cons*: "Cheating" by pre-sorting? 
-    - Argument: In a real system, a sensor might produce sorted candidates, or we pipeline the sort. 
+- *Cons*: Offloading pre-sorting? 
+    - Argument: In a practical system, a sensor might produce sorted candidates, or we pipeline the sort. 
     - Also, K=1000 suggests we only need top 1000. 
-    - Calculating N^2 distances on FPGA is easy (highly parallel), but sorting them is the bottleneck.
+    - Calculating N^2 distances on FPGA is straightforward (highly parallel), but sorting them is the bottleneck.
     - Given the constraints of this generic task, offloading sort is practical.
 
 ## Option B: Full Hardware Calculation
 - If N is small (e.g. 100), we can compute all N^2, store in BRAM, then search min K times.
 - Finding minimum K times is O(K * N^2) or better.
 - DSU is fast.
-- If N~1000, N^2 = 1M edges. Too big for on-chip sort without external RAM.
-- **Decision**: Pre-sort in Python for this exercise. Focus HW on DSU.
+- If N~1000, N^2 = 1M edges. Exceeds capacity for on-chip sort without external RAM.
+- **Approach**: Pre-sort in Python for this exercise. Focus HW on DSU.
 
 ## Implementation Details
 - `input.hex`: List of `(u, v)` indices (16-bit each). Sorted by distance. Limit to K+buffers.
@@ -54,4 +54,8 @@
     - Pipeline: process one edge at a time.
     - `Parent` RAM.
     - Finale: Iterate `Size` RAM to find maxes.
+
+## Verdict
+Success! The hardware DSU efficiently processes pre-sorted edges.
+**Cycle Count**: K cycles (read edges) + N cycles (scan components). Linear time O(K).
 
