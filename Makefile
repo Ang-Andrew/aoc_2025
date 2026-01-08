@@ -1,7 +1,7 @@
 DOCKER_IMAGE = ecp5-toolchain
 
 # Find all subdirectories that contain a Makefile
-PROJECTS := $(shell find . -mindepth 2 -name Makefile -exec dirname {} \; | sed 's|./||')
+PROJECTS := $(shell find day* -mindepth 2 -name Makefile -exec dirname {} \;)
 
 .PHONY: build-image clean-all list $(PROJECTS)
 
@@ -28,3 +28,14 @@ clean-all:
 # 1. Exact match for project name (e.g. 'make blinky')
 $(PROJECTS):
 	$(MAKE) -C $@
+
+# Test all projects
+# Test all projects (supports -jN parallel execution)
+PROJECT_TESTS := $(addsuffix .test, $(PROJECTS))
+
+.PHONY: $(PROJECT_TESTS) test
+
+$(PROJECT_TESTS):
+	$(MAKE) -C $(basename $@) test
+
+test: $(PROJECT_TESTS)
