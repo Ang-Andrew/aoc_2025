@@ -28,7 +28,7 @@
             - If `Grid[y][x] == '^'`: `NextActive[x-1] |= 1`, `NextActive[x+1] |= 1` (split).
             - If `Grid[y][x] == 'S'`: (Treat as source) `NextActive[x] |= 1`.
         - Also if `Grid[y][x] == 'S'` (and it's start row), inject beam.
-- *Pros*: O(1) memory (just one line buffer). O(N) time (streaming). Extremely fast and hardware efficient.
+- *Pros*: O(1) memory (just one line buffer). O(N) time (streaming). Hardware efficient.
 - *Cons*: Needs to handle boundary conditions (x-1, x+1).
 
 ## Implementation Details
@@ -46,3 +46,7 @@
 - Requires 2 line buffers (Current, Next) of size WIDTH bits.
 - Logic is simple varying shifters.
 - Very high frequency possible.
+
+## Verdict
+Success! The row-streaming cellular automaton efficiently processes the grid in a single pass.
+**Cycle Count**: 1 cycle per row. Total cycles ~ Height.
