@@ -132,6 +132,19 @@ module solver (
         end
     end
 
+    // Sum logic
+    reg [3:0] sum_wire;
+    reg mask_left, mask_right;
+    
+    always @* begin
+        mask_left = (col_cnt_d1 == 13'd2);
+        mask_right = (col_cnt_d1 == 13'd0);
+        
+        sum_wire = (mask_left ? 1'b0 : (w[0][0] + w[1][0] + w[2][0])) + 
+                   (                    w[0][1] +           w[2][1] ) + 
+                   (mask_right ? 1'b0 : (w[0][2] + w[1][2] + w[2][2]));
+    end
+
     // Pipeline Stage 2: Window Update & Calculation
     always @(posedge clk) begin
         if (reset) begin
@@ -162,22 +175,7 @@ module solver (
         end
     end
     
-    // Sum logic
-    reg [3:0] sum_wire;
-    reg mask_left, mask_right;
-    
-    always @* begin
-        mask_left = (col_cnt_d1 == 13'd2);
-        // col_cnt_d1 sequence: 0, 1, ... 136.
-        // mask_left: when center is Col 0.
-        // mask_right: when center is Col 136.
-        
-        mask_right = (col_cnt_d1 == 13'd0);
-        
-        sum_wire = (mask_left ? 1'b0 : (w[0][0] + w[1][0] + w[2][0])) + 
-                   (                    w[0][1] +           w[2][1] ) + 
-                   (mask_right ? 1'b0 : (w[0][2] + w[1][2] + w[2][2]));
-    end
+
     
     // Note: This logic misses the edges (first/last col, first/last row).
     // The problem implies the grid is "on the floor". Edges have fewer neighbors (0 for outside).

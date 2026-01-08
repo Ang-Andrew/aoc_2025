@@ -28,7 +28,7 @@ def solve(input_str):
             
             if neighbor_count < 4:
                 count += 1
-                # print(f"Py: Found at Row {r} Col {c} (Neighbors {neighbor_count})")
+                print(f"Py: Found at Row {r} Col {c} (Neighbors {neighbor_count})")
                 
     return count
 

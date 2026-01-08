@@ -1,0 +1,29 @@
+sh -c "iverilog -o sim.vvp -s tb_solver -g2012 src/line_buffer_draft.v src/solver.v src/tb_solver.v && vvp sim.vvp"
+VCD info: dumpfile day4.vcd opened for output.
+WARNING: src/tb_solver.v:43: $readmemh(../input/input.hex): Not enough words in the file for the requested range [0:65535].
+V: Match at Row          0 Col          2
+V: Match at Row          0 Col          3
+V: Match at Row          0 Col          5
+V: Match at Row          0 Col          6
+V: Match at Row          0 Col          8
+V: Match at Row          1 Col          0
+DEBUG: Row 2 Col 0
+w[0]: 0 0 1
+w[1]: 0 1 1
+w[2]: 0 0 1
+Sum:  3
+Masks: L=1 R=0
+V: Match at Row          2 Col          0
+V: Match at Row          2 Col          6
+V: Match at Row          2 Col          8
+V: Match at Row          3 Col          0
+V: Match at Row          4 Col          8
+V: Match at Row          5 Col          0
+V: Match at Row          7 Col          0
+V: Match at Row          9 Col          2
+Final Count:         14
+Simulation cycles:        3509
+Items sent:         200
+DUT Captured Width:   10
+FAILURE: Expected 1424, got         14
+src/tb_solver.v:109: $finish called at 14038000 (1ps)

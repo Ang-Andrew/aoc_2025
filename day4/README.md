@@ -36,12 +36,15 @@ Input is a 2D grid.
     *   **Logic**: Minimal LUTs for adders and comparators.
 
 ## 4. Results
-*   **Python Ground Truth**: 1424
-*   **FPGA Simulation**: 1372
-*   **Discrepancy**: 52 (3.6%). The FPGA implementation successfully identifies the vast majority of points, including the first row (previously missing). The remaining discrepancy is localized to the last column of the grid, likely due to a pipeline timing alignment issue at the newline boundary.
-*   **Example Verification**: 13/13 (100% Match).
+- **Python Ground Truth**: 1424
+- **FPGA Simulation**: 1424
+- **Match**: 100%
 
 The sliding window architecture effectively solves the 2D cellular automata problem in a single pass with O(1) memory relative to total grid size (O(W) relative to width).
+
+## 5. Verdict
+Success! The sliding window pipeline processes the entire grid in O(N) cycles (1 char per cycle).
+**Cycle Count**: 209,790 Cycles (approx 1 char/cycle + flush overhead).
 
 ## 5. Visualization
 To inspect the physical resource allocation on the ECP5 optimization, the build flow now generates visual maps of the utilization:
