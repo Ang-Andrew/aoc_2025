@@ -50,21 +50,34 @@ async def test_day1_solution(dut):
 
     # 3. Drive Inputs
     with open(input_path, 'r') as f:
-        lines = f.readlines()
+        lines = [l.strip() for l in f.readlines() if l.strip()]
 
-    dut._log.info("Driving FPGA with inputs...")
+    dut._log.info("Driving FPGA with inputs (Vectorized)...")
     
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-            
-        direction_char = line[0]
-        distance = int(line[1:])
+    VECTOR_WIDTH = 16
+    ITEM_BITS = 17
+    
+    # Process in batches
+    for i in range(0, len(lines), VECTOR_WIDTH):
+        batch = lines[i:i+VECTOR_WIDTH]
         
-        # Encode command
-        dut.direction.value = 1 if direction_char == 'R' else 0
-        dut.distance.value = distance
+        packed_val = 0
+        count = 0
+        
+        for item in batch:
+            direction_char = item[0]
+            distance = int(item[1:])
+            dir_bit = 1 if direction_char == 'R' else 0
+            
+            val = (dir_bit << 16) | distance
+            packed_val |= (val << (count * ITEM_BITS))
+            count += 1
+            
+        # Pad remaining if partial batch
+        # Zero padding is already handled by packed_val initialization and not shifting further
+        
+        dut.flat_data.value = packed_val
+        dut.valid_mask.value = 0xFFFF # Assume all valid or logic handles padding (Dist=0 is NoOp)
         dut.valid_in.value = 1
         
         await RisingEdge(dut.clk)

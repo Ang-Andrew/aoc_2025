@@ -11,8 +11,8 @@ module top (
                          // Actually, I'll instantiate a counter to run the ROM.
 
     // Signals
-    reg [12:0] rom_addr = 0;
-    (* keep="true" *) wire [16:0] rom_data;
+    reg [8:0] rom_addr = 0; // 4096 / 16 = 256 entries. 9 bits covers it.
+    (* keep="true" *) wire [271:0] rom_data;
     
     reg valid_in = 0;
     wire [31:0] part1_count;
@@ -20,10 +20,10 @@ module top (
     
     // ROM Instantiation
     input_rom #(
-        .FILENAME("data/input.hex") // Path relative to synthesis execution
+        .FILENAME("data/input.hex") 
     ) rom_inst (
         .clk(clk),
-        .addr(rom_addr),
+        .addr({4'b0, rom_addr}), // Pad address if ROM expects wider, or match types
         .data(rom_data)
     );
     
@@ -32,15 +32,15 @@ module top (
         .clk(clk),
         .reset(reset),
         .valid_in(valid_in),
-        .direction(rom_data[16]),
-        .distance(rom_data[15:0]),
+        .valid_mask(16'hFFFF), // assume full vectors for simplicity
+        .flat_data(rom_data),
         .part1_count(part1_count),
         .part2_count(part2_count)
     );
     
-    // State Machine to feed data
-    // Very simple: just increment address every other cycle (because ROM has 1 cycle latency)
-    // 4098 instructions.
+    // State Machine
+    // 4098 items / 16 = 256.125 -> 257 lines.
+    localparam MAX_ADDR = 256; 
     
     reg [2:0] state = 0;
     localparam IDLE = 0;
@@ -62,40 +62,26 @@ module top (
                 end
                 
                 FETCH: begin
-                    // rom_addr is valid.
-                    // Next cycle, rom_data will be valid.
                     state <= EXEC;
                 end
                 
                 EXEC: begin
-                    // rom_data is valid now.
                     valid_in <= 1;
-                    
-                    if (rom_addr == 4097) begin
-                        state <= DONE; // We just processed the last one
-                        valid_in <= 1; // Pulse valid for last instruction
+                    if (rom_addr == MAX_ADDR) begin
+                        state <= DONE;
+                        valid_in <= 1; 
                     end else begin
-                        state <= FETCH; // Go back to fetch/wait for next address
-                        rom_addr <= rom_addr + 1; // Increment for next fetch
+                        state <= FETCH; 
+                        rom_addr <= rom_addr + 1;
                     end
                 end
                 
                 DONE: begin
                     valid_in <= 0;
-                    // Stay here
                 end
             endcase
             
-            // Note: valid_in needs to be PULSED.
-            // In EXEC, we set valid_in <= 1.
-            // In FETCH/DONE, valid_in <= 0.
-            // This creates a pulse every 2 cycles, matching the rom latency pipeline roughly.
-            if (state == EXEC) valid_in <= 0; // Turn off immediately in next cycle?
-            // Actually:
-            // T0: State=FETCH, Address=A.
-            // T1: State=EXEC, Data=D(A). valid_in <= 1. Next State=FETCH/DONE. Address=(A+1).
-            // T2: State=FETCH. valid_in <= 0.
-            // Yes, this works. valid_in is high for 1 cycle.
+            if (state == EXEC) valid_in <= 0; 
         end
     end
 

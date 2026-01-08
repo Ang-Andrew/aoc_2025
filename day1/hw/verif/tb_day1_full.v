@@ -7,7 +7,7 @@ module tb_day1_full;
     
     // ROM Interface
     reg [12:0] rom_addr;
-    wire [16:0] rom_data; // 16: Dir, 15-0: Dist
+    wire [271:0] rom_data; 
     
     // Solver Interface
     reg valid_in;
@@ -15,7 +15,7 @@ module tb_day1_full;
     wire [31:0] part2;
     
     // Control
-    integer max_cycles = 4098;
+    integer max_cycles = 257; // 4098 / 16 ceiling
     integer i;
 
     // Instantiate Modules
@@ -31,8 +31,8 @@ module tb_day1_full;
         .clk(clk),
         .reset(reset),
         .valid_in(valid_in),
-        .direction(rom_data[16]),
-        .distance(rom_data[15:0]),
+        .flat_data(rom_data),
+        .valid_mask(16'hFFFF), // always valid mask for simplified test
         .part1_count(part1),
         .part2_count(part2)
     );
@@ -55,31 +55,14 @@ module tb_day1_full;
         reset = 0;
         #20;
         
-        // Loop through all 4098 instructions
-        // Pipeline:
-        // Clock 0: valid_in=0, addr=0.
-        // Clock 1: valid_in=1, data valid from ROM (addr 0).
-        // Clock 2: valid_in=1, addr=1.
-        
-        // Wait for ROM to stabilize first data?
-        // With synchronous ROM, addr->q takes 1 cycle.
-        
-        for (i = 0; i < 4098; i = i + 1) begin
+        // Loop through approx 257 batches
+        for (i = 0; i < max_cycles; i = i + 1) begin
             rom_addr = i;
-            // Needed to fetch data
             #10; 
             
-            // Now ROM data out is valid for instruction 'i'
             valid_in = 1;
-            #10; // Execute solver for 1 cycle
+            #10; 
             valid_in = 0;
-            
-            // Wait a cycle or just proceed?
-            // Solver takes data on posedge where valid_in is high.
-            // valid_in needs to be distinct pulses or held high?
-            // Logic is: `else if (valid_in)`. If held high, it runs every cycle.
-            // We want 1 step per instruction.
-            // My loop structure above effectively creates valid pulses.
         end
         
         #100;

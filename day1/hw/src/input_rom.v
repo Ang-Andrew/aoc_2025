@@ -3,10 +3,10 @@ module input_rom #(
 )(
     input wire clk,
     input wire [12:0] addr, 
-    output reg [16:0] data
+    output reg [271:0] data
 );
 
-    reg [16:0] memory [0:8191]; // Depth up to 8192
+    reg [271:0] memory [0:255]; // Depth appropriate for ~4096 vectors (4096/16 = 256)
 
     initial begin
         $readmemh(FILENAME, memory);
