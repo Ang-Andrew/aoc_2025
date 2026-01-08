@@ -6,7 +6,10 @@ module solution (
     output reg [63:0] total_paths,
     output reg done
 );
-    `include "params.vh"
+    // `include "params.vh"
+    localparam NUM_NODES = 111;
+    localparam OUT_NODE = 0;
+    localparam YOU_NODE = 110;
     
     // Input Stream RAM
     // Size unknown...

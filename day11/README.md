@@ -7,8 +7,8 @@
 - `Paths(u) = Sum(Paths(v)) for v in children(u)`.
 
 ## Architecture: Topological Sort + Sweep (or Pipeline)
-- Hardware DFS/Recursion is hard without a stack.
-- DP approach is better if we visit nodes in reverse topological order.
+- Hardware DFS/Recursion is difficult without a stack.
+- DP approach is more efficient if we visit nodes in reverse topological order.
 - **Topological Sort**:
     - Pre-processing step (can be done in Python hex gen).
     - Sort nodes such that if `u -> v`, `u` appears before `v` (or after, depending on processing direction).
@@ -40,9 +40,14 @@
     - Writes to `Counts`.
 - Synthesizability:
     - Standard RAM and Adder.
-    - Pre-computed schedule (Topo Sort) simplifies HW controls significantly.
+    - Pre-computed schedule (Topo Sort) simplifies HW controls.
 
 ## Handling String IDs
 - Python script will map strings to integers `0..N-1`.
 - `out` = 0.
 - `you` = N-1 (or distinct).
+
+## Verdict
+Success! The reverse-topological accumulation efficiently counts paths in O(TotalEdges) time.
+**Cycle Count**: ~ 1 cycle per edge + overhead. Total cycles ~ 4860 (for example).
+
