@@ -1,3 +1,3 @@
-localparam WIDTH = 3724;
+localparam WIDTH = 3725;
 localparam HEIGHT = 5;
-localparam MEM_SIZE = 18620;
+localparam COL_BITS = 40;
