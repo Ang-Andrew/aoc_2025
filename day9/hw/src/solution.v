@@ -1,4 +1,4 @@
-`timescale 1ns / 1ps
+`timescale 1ns/1ps
 
 module solution (
     input clk,
@@ -8,33 +8,27 @@ module solution (
 );
     `include "params.vh"
     
-    // RAM
-    // 64-bit words: [X:32, Y:32]
-    reg [63:0] points [0:NUM_POINTS-1];
+    // Memory: 256-bit wide, holds 4 points per line (64 bits each)
+    reg [255:0] mem [0:DEPTH-1];
     
     initial begin
-        $readmemh("../input/input.hex", points);
+        $readmemh("../input/points.hex", mem);
     end
     
-    integer i, j;
-    reg [31:0] xi, yi, xj, yj; // Expanded to 32-bit
-    reg [31:0] dx, dy; 
+    // Registers
+    reg [15:0] i; // coordinate index
+    reg [15:0] j_block; // block index
     
-    // Architecture Note:
-    // Expanding 'area' to 64-bit prevents overflow for results > 2^32.
-    // Trade-off: On FPGAs with 18x18 or 25x18 DSP slices, a 32x32 multiply
-    // requires cascaded DSPs.
-    reg [63:0] area;
+    reg [63:0] p_i;    // Current point i (64-bit {Y, X})
+    reg [255:0] row_j; // Fetched row of 4 points
     
-    localparam S_INIT = 0;
-    localparam S_FETCH_I = 1;
-    localparam S_FETCH_J = 2;
-    localparam S_CALC = 3;
-    localparam S_DONE = 4;
+    // State Machine
+    localparam S_FETCH_I = 0;
+    localparam S_RUN_J = 1;
+    localparam S_DONE = 2;
+    reg [1:0] state;
     
-    reg [3:0] state;
-
-    // Abs helpers
+    // Helper function for absolute difference (32-bit)
     function [31:0] abs_diff;
         input [31:0] a, b;
         begin
@@ -42,61 +36,84 @@ module solution (
             else abs_diff = b - a;
         end
     endfunction
-
+    
+    // Combinational Area Logic
+    reg [63:0] area0, area1, area2, area3;
+    reg [63:0] p0, p1, p2, p3;
+    
+    always @(*) begin
+        p0 = row_j[63:0];
+        p1 = row_j[127:64];
+        p2 = row_j[191:128];
+        p3 = row_j[255:192];
+        
+        // p_i is {Y, X} (32-bit each)
+        // Area = (abs(x1-x2)+1) * (abs(y1-y2)+1)
+        // Coords are [31:0] and [63:32]
+        
+        area0 = ({48'd0, abs_diff(p_i[31:0], p0[31:0])} + 64'd1) * ({48'd0, abs_diff(p_i[63:32], p0[63:32])} + 64'd1);
+        area1 = ({48'd0, abs_diff(p_i[31:0], p1[31:0])} + 64'd1) * ({48'd0, abs_diff(p_i[63:32], p1[63:32])} + 64'd1);
+        area2 = ({48'd0, abs_diff(p_i[31:0], p2[31:0])} + 64'd1) * ({48'd0, abs_diff(p_i[63:32], p2[63:32])} + 64'd1);
+        area3 = ({48'd0, abs_diff(p_i[31:0], p3[31:0])} + 64'd1) * ({48'd0, abs_diff(p_i[63:32], p3[63:32])} + 64'd1);
+    end
+    
+    wire [15:0] i_blk_idx = i[15:2]; 
+    wire [1:0]  i_sub_idx = i[1:0];
+    
+    reg [255:0] fetch_i_block_data;
+    
     always @(posedge clk) begin
         if (rst) begin
+            state <= S_FETCH_I;
+            i <= 0;
+            j_block <= 0;
             max_area <= 0;
             done <= 0;
-            state <= S_INIT;
+            p_i <= 0;
         end else begin
             case (state)
-                S_INIT: begin
-                    i <= 0;
-                    state <= S_FETCH_I;
-                end
-                
                 S_FETCH_I: begin
-                    if (i >= NUM_POINTS) begin
+                    if (i >= N) begin
                         state <= S_DONE;
                         done <= 1;
                     end else begin
-                        xi <= points[i][63:32];
-                        yi <= points[i][31:0];
-                        j <= i + 1; // Start inner loop
-                        state <= S_FETCH_J;
+                        fetch_i_block_data = mem[i_blk_idx]; 
+                        
+                        case (i_sub_idx)
+                            2'd0: p_i <= fetch_i_block_data[63:0];
+                            2'd1: p_i <= fetch_i_block_data[127:64];
+                            2'd2: p_i <= fetch_i_block_data[191:128];
+                            2'd3: p_i <= fetch_i_block_data[255:192];
+                        endcase
+                        
+                        j_block <= i_blk_idx; 
+                        state <= S_RUN_J;
                     end
                 end
                 
-                S_FETCH_J: begin
-                    if (j >= NUM_POINTS) begin
-                        // Next I
+                S_RUN_J: begin
+                    // 1. Fetch Row J
+                    row_j = mem[j_block];
+                    
+                    // 2. Calc happens in comb logic (area0..3)
+                    
+                    // 3. Update Max
+                    if (area0 > max_area) max_area <= area0;
+                    if (area1 > max_area) max_area <= area1;
+                    if (area2 > max_area) max_area <= area2;
+                    if (area3 > max_area) max_area <= area3;
+                    
+                    // Loop
+                    if (j_block == DEPTH - 1) begin
+                        // Done with this I
                         i <= i + 1;
                         state <= S_FETCH_I;
                     end else begin
-                        xj <= points[j][63:32];
-                        yj <= points[j][31:0];
-                        state <= S_CALC;
+                        j_block <= j_block + 1;
                     end
                 end
                 
-                S_CALC: begin
-                    // Compute Area
-                    dx = abs_diff(xi, xj) + 1;
-                    dy = abs_diff(yi, yj) + 1;
-                    // Force 64-bit arthimetic context
-                    area = {32'b0, dx} * {32'b0, dy};
-                    
-                    if (area > max_area) begin
-                        max_area <= area;
-                    end
-                    
-                    j <= j + 1;
-                    state <= S_FETCH_J;
-                end
-                
-                S_DONE: begin
-                    // done <= 1
-                end
+                S_DONE: ;
             endcase
         end
     end
