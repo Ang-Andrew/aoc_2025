@@ -7,7 +7,7 @@ module solution (
     output reg done
 );
     // Parameters
-    parameter MEM_SIZE = 4096; // Default 16KB words (Fits in BRAM)
+    parameter MEM_SIZE = 131072; // Increased to fit input.hex
     
     // Data Memories
     reg [31:0] mem [0:MEM_SIZE-1];       // Input Problems

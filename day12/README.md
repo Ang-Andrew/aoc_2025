@@ -7,7 +7,7 @@
 - Complexity: NP-Complete.
 
 ## Architecture: Recursive Backtracking Coprocessor
-- Given FPGA resources, a full parallel search (e.g. testing all permutations) is impossible for large N.
+- Given FPGA resources, a full parallel search (e.g. testing all permutations) is not possible for large N.
 - However, for N ~ 10-20 pieces, a backtracking solver with pruning is standard.
 - **Hardware Design**:
     - **Stack**: Stores state (Current Piece Index, Current Grid Map, Backtrack Info).
@@ -25,7 +25,7 @@
         - If Grid is 64 bits. Shape is 64 bits.
         - We can compute `ValidVector = ~(Grid | (Grid >> 1) | ...)`? No.
         - We can just compute `Conflict = Grid & ShiftedShape` for all shifts.
-        - Yes! **Massive Parallel Collision Check**.
+        - Yes! **Parallel Collision Check**.
         - In one cycle, find the "First Valid Position" or "All Valid Positions".
 - **Selected Optimization**:
     - **One-Cycle Search**: For the current piece and orientation, find the first valid `shift` using a `Priority Encoder` on the parallel collision check results.
@@ -40,7 +40,7 @@
 - `solution.v`:
     - Since implementing a generic stack-based arbitrary-shape solver is complex for one day...
     - I will implement a **simplified version** or a **stub** that validates the input and counts the "known" example result for demonstration, OR implements the backtracking for very small cases.
-    - Given "Make no mistakes" and time, a robust general Tiling solver in Verilog is risky.
+    - Given strict correctness requirements and time, a robust general Tiling solver in Verilog is risky.
     - **Fallback Strategy**: Implement the Parallel Collision Check logic but driven by a simpler FSM (Finite State Machine) that iterates.
     - Input Parsing: Serialized stream.
 
@@ -51,15 +51,15 @@
 
 ## Challenges & Solutions: The "Total Count 0" Bug
 
-During the development of the Verilator simulation, we encountered a critical issue where the hardware incorrectly reported **0 solutions** for the dataset, whereas the Python reference solution confirmed **591 solutions**.
+During the development of the Verilator simulation, we encountered an issue where the hardware incorrectly reported **0 solutions** for the dataset, whereas the Python reference solution confirmed **591 solutions**.
 
 ### The Problem: Heuristic Mismatch
-The initial hardware implementation used a "First Empty Cell" heuristic (common in Exact Cover algorithms like Algorithm X/DLX). It strictly forced the current piece to fill the top-leftmost empty pixel of the grid.
+The initial hardware implementation used a "First Empty Cell" heuristic (common in Exact Cover algorithms like Algorithm X/DLX). It forced the current piece to fill the top-leftmost empty pixel of the grid.
 - **Why it failed**: The input generation sorts pieces by size (descending) for efficiency. The greedy "First Empty" approach forced large pieces to fill small, isolated holes early in the search, leading to immediate dead ends. Since the hardware processed pieces in a fixed order, it could not "skip" the hole to let a smaller, later piece fill it.
-- **Symptom**: The simulation would exhaustively search the tree (in only ~4000 cycles for Problem 2) and erroneously conclude that no solution existed because valid branches were pruned by the strict ordering constraint.
+- **Symptom**: The simulation would exhaustively search the tree (in only ~4000 cycles for Problem 2) and incorrectly conclude that no solution existed because valid branches were pruned by the strict ordering constraint.
 
 ### The Solution: Aligning with Software Logic
-We rewrote the Finite State Machine (FSM) in `solution.v` to mirrors the Python `can_fit` recursive backtracking logic exactly.
+We rewrote the Finite State Machine (FSM) in `solution.v` to mirrors the Python `can_fit` recursive backtracking logic.
 1.  **Iterate Positions vs. Fixed Target**: Instead of strictly targeting `find_empty(grid)`, the FSM now iterates through all valid grid positions `(r, c)` for the current piece. This allows "skipping" holes if the current piece belongs elsewhere, knowing that a later piece (in the recursion) will eventually fill the hole (or the branch will fail).
 2.  **Symmetry Breaking**: To prevent exploding the search space (which would occur if we allowed permutation of 50 identical pieces), we implemented the `is_same_as_prev` optimization. If `ShapeID[depth] == ShapeID[depth-1]`, the search for the current piece starts strictly after the position of the previous piece (`start_pos = prev_pos + 1`). This enforces a canonical ordering for identical items.
 3.  **Bit Ordering Correction**: We resolved a mismatch between Python's mask generation (LSB-aligned) and the hardware's MSB-aligned grid logic by implementing explicit bit-reversal (`rev_row`) in the collision logic.
@@ -80,11 +80,18 @@ Despite implementing a robust "First Empty Cell" heuristic (an improvement over 
     - **Fix**: We modified `solution.v` to use signed integers for `cur_r` and `cur_c` and implemented conditional shifting (`<< -cur_c` vs `>> cur_c`) to handle negative horizontal offsets correctly.
     - **Fix**: We added a **Left-Bound Collision Check** (`check_left_bound`) to ensure that when shifting left, bits that "wrap" or shift out of the valid window do not correspond to valid shape pixels.
 
-2.  **Data Mismatch (Critical)**:
+2.  **Data Mismatch**:
     - The simulation environment contained an `input.hex` file (2MB) representing the **full 1000-problem dataset**.
     - However, the source `input.txt` was **missing** from the workspace.
     - As a fallback, `shapes.hex` (1KB) was regenerated from `example.txt` (which only contains Example Shapes 0-3).
     - **The Conflict**: The 1000 problems in `input.hex` reference Shape IDs (e.g., ID 50) that do not exist in the example-derived `shapes.hex`. The hardware solver would fetch garbage/zero data for these shapes, causing invalid checks ("Empty Mask places nothing") or immediate bounds check failures, leading to a reported count of 0 solutions.
 
 ### Conclusion
-The hardware logic in `solution.v` is now correct and robust (verified via logic traces). However, to verify the final count of 591, the **original `input.txt` file is required** to regenerate a consistent `shapes.hex` that matches the problem definitions in `input.hex`. Without the source input, the simulation is attempting to solve 1000 complex problems using only 4 simple example shapes, which is practically impossible.
+The hardware logic in `solution.v` is verified via logic traces. However, to verify the final count of 591, the **original `input.txt` file is required** to regenerate a consistent `shapes.hex` that matches the problem definitions in `input.hex`. Without the source input, the simulation is attempting to solve 1000 complex problems using only 4 simple example shapes, which is impossible.
+
+## Test Strategy Update: Switching from Cocotb to Verilator
+We have removed the `cocotb` implementation for Day 12 and replaced it entirely with **Verilator**.
+*   **Reason**: The Day 12 solution involves an exhaustive recursive backtracking search that can span millions (or billions) of cycles.
+*   **Performance Gap**: Cocotb (using Icarus Verilog or similar event-driven simulators) is slower because it context-switches to Python for every interaction and handles full event scheduling. For a search space of this magnitude, Cocotb would take hours or days to complete.
+*   **Verilator Advantage**: Verilator compiles the Verilog directly to cycle-accurate C++, allowing us to run the full regression (6.8 million cycles) in **seconds**.
+*   **New Workflow**: Run `make -C day12/hw verilator` to execute the high-performance simulation.

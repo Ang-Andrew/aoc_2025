@@ -16,13 +16,11 @@ all: $(TARGET)
 
 $(TARGET): $(SRCS) $(TB_SRC)
 	@mkdir -p $(BUILD_DIR)
-	iverilog -o $@ -I $(SRC_DIR) $^
+	$(DOCKER_CMD) iverilog -o $@ -I $(SRC_DIR) $^
 
 run: $(TARGET)
-	vvp $(TARGET)
+	$(DOCKER_CMD) vvp $(TARGET)
 
-clean:
-	rm -rf $(BUILD_DIR)
 
 # Synthesis / Implementation
 PROJ = solution
@@ -34,3 +32,15 @@ include ../../common/common.mk
 
 synth-impl:
 	$(MAKE) impl
+
+# Verilator Simulation
+verilator:
+	rm -rf obj_dir
+	$(DOCKER_CMD) verilator --cc --exe --build -j 0 -Wall --trace -Isrc src/solution.v sim/sim_main.cpp
+	$(DOCKER_CMD) ./obj_dir/Vsolution
+
+# Test (Uses Verilator for speed)
+test: sim
+
+# Alias sim to verilator
+sim: verilator
