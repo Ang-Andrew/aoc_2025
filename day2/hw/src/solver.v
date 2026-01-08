@@ -9,125 +9,82 @@ module solver #(
     output reg done
 );
     
-    //-------------------------------------------------------------------------
-    // 1. Generator Instantiation
-    //-------------------------------------------------------------------------
-    wire [63:0] gen_val;
-    wire gen_valid;
-    wire gen_done;
-    reg stall_gen; 
-    
-    generator #(
-        .MAX_K(MAX_K)
-    ) gen_inst (
-        .clk(clk),
-        .rst(rst),
-        .stall(stall_gen),
-        .out_val(gen_val),
-        .out_valid(gen_valid),
-        .done(gen_done)
-    );
-    
-    //-------------------------------------------------------------------------
-    // 2. Memory (Ranges)
-    //-------------------------------------------------------------------------
-    // We use distributed RAM or regfile since RANGE_COUNT is small (~40).
+    // 1. Memory
     reg [127:0] ranges [0:RANGE_COUNT-1];
     initial $readmemh(MEM_FILE, ranges);
     
-    //-------------------------------------------------------------------------
-    // 3. Pipeline Stages
-    //-------------------------------------------------------------------------
+    // 2. Instantiate Cores
+    wire [63:0] core_sums [0:RANGE_COUNT-1];
+    wire [RANGE_COUNT-1:0] core_dones;
     
-    // STAGE 0: Fetch Range ---------------------------------------------------
-    reg [31:0] range_idx;
-    reg [63:0] s0_r_start, s0_r_end;
-    reg        s0_range_valid;
+    // Start signal
+    reg start_cores;
     
-    always @(posedge clk) begin
-        if (rst) begin
-            range_idx <= 0;
-            s0_range_valid <= 0;
-        end else begin
-            if (range_idx < RANGE_COUNT) begin
-                s0_r_start <= ranges[range_idx][63:0];
-                s0_r_end   <= ranges[range_idx][127:64];
-                s0_range_valid <= 1;
-            end else begin
-                s0_range_valid <= 0;
-            end
+    genvar i;
+    generate
+        for (i=0; i<RANGE_COUNT; i=i+1) begin : cores
+            range_calc #(
+                .MAX_K(MAX_K)
+            ) rc (
+                .clk(clk),
+                .rst(rst),
+                .start(start_cores),
+                .range_start(ranges[i][63:0]),
+                .range_end(ranges[i][127:64]),
+                .sum_out(core_sums[i]),
+                .done(core_dones[i])
+            );
         end
-    end
-
-    // Handling Stalls/Updates
-    // We need to stall Gen if stage 1 says "Advance Range".
-    // "Advance Range" happens in Stage 2 logic? 
-    // Actually, simple pipeline:
-    // P0: Gen Output -> P1 Register
-    // P1: Compare (Val vs Range). If Val > Range, signal Update Range. Stall P0.
+    endgenerate
     
-    // Let's integrate Gen output deeply.
-    // Gen output is valid at cycle T.
-    // Range is valid at cycle T (fetched based on idx).
+    // 3. Control & Accumulation
+    reg [2:0] state;
+    integer j;
     
-    wire [63:0] cur_r_start = ranges[range_idx][63:0];
-    wire [63:0] cur_r_end   = ranges[range_idx][127:64];
-
-    // Combinatorial Check
-    wire is_past   = gen_valid && (range_idx < RANGE_COUNT) && (gen_val > cur_r_end);
-    wire is_before = gen_valid && (range_idx < RANGE_COUNT) && (gen_val < cur_r_start);
-    wire is_match  = gen_valid && (range_idx < RANGE_COUNT) && (!is_past && !is_before);
-    
-    // Stall Logic
-    // If "is_past", we need to increment range_idx. 
-    // The current gen_val MUST be preserved (stalled) so we can check it against NEW range.
-    always @(*) begin
-        stall_gen = is_past; 
-    end
-    
-    // Accumulator Logic (Pipelined Adder?)
-    // 250 MHz: 64-bit add might be slow.
-    // Let's register the add. "if match, add".
-    
-    reg [63:0] add_val;
-    reg        add_en;
+    localparam S_WAIT_START = 0;
+    localparam S_RUN = 1;
+    localparam S_SUM = 2;
+    localparam S_DONE = 3;
     
     always @(posedge clk) begin
         if (rst) begin
-            range_idx <= 0;
-            add_val <= 0;
-            add_en <= 0;
+            state <= S_WAIT_START;
+            total_sum <= 0;
             done <= 0;
+            start_cores <= 0;
         end else begin
-            add_en <= 0;
-            
-            if (!done) begin
-                // Update Range Index
-                if (is_past) begin
-                    range_idx <= range_idx + 1;
+            case (state)
+                S_WAIT_START: begin
+                    // Wait 1 cycle for reset to settle?
+                    start_cores <= 1;
+                    state <= S_RUN;
                 end
                 
-                // Processing
-                if (is_match) begin
-                    add_val <= gen_val;
-                    add_en <= 1;
+                S_RUN: begin
+                    start_cores <= 0;
+                    if (&core_dones) begin // All Done
+                        state <= S_SUM;
+                    end
                 end
                 
-                // Global Done Logic
-                if ((gen_done || range_idx >= RANGE_COUNT) && !stall_gen) begin
-                    // Wait for pipeline to drain? 1 cycle for adder.
+                S_SUM: begin
+                    // Sum all outputs (Combinational loop ok since done)
+                    // Or registered?
+                    // Let's do a simple loop sum. 38 items. Ripple adder might be slow but it's 1 cycle.
+                    // Synthesizer will tree it.
+                    reg [63:0] temp_sum;
+                    temp_sum = 0;
+                    for (j=0; j<RANGE_COUNT; j=j+1) begin
+                        temp_sum = temp_sum + core_sums[j];
+                    end
+                    total_sum <= temp_sum;
+                    state <= S_DONE;
+                end
+                
+                S_DONE: begin
                     done <= 1;
                 end
-            end
-        end
-    end
-    
-    // Final Adder Stage
-    always @(posedge clk) begin
-        if (rst) begin
-            total_sum <= 0;
-        end else if (add_en) begin
-            total_sum <= total_sum + add_val;
+            endcase
         end
     end
 

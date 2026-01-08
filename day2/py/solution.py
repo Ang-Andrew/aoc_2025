@@ -92,6 +92,7 @@ def solve(input_file):
         total_sum += s
         
     print(f"Total Sum: {total_sum}")
+    return total_sum
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

@@ -10,5 +10,9 @@ src/mem.hex: ../py/solution.py ../input/input.txt
 	python3 ../py/solution.py ../input/input.txt --generate-hex src/mem.hex
 
 sim: src/mem.hex
-	iverilog -o day2_sim src/solver.v src/generator.v tb/tb.v
-	vvp day2_sim
+	$(DOCKER_CMD) iverilog -o day2_sim src/solver.v src/generator.v tb/tb.v
+	$(DOCKER_CMD) vvp day2_sim
+
+# Cocotb Test
+test:
+	$(DOCKER_CMD) make -f run_cocotb.mk
