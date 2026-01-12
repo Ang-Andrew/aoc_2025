@@ -13,10 +13,13 @@ module range_calc #(
     reg [3:0] k;
     reg [3:0] state;
 
+    // Reduce bit widths based on actual data ranges
+    // Max value is ~9.4B (34 bits), intermediate products fit in 40+34=74 bits
+    // But we can use 48 bits for most operations since max const_k * max_value < 2^48
+
     // Multipliers for K=1..12: (10^k + 1)
-    // We can store them in a LUT case statement to save logic vs calculating
-    reg [63:0] const_k;
-    reg [63:0] const_k_reg;  // Registered version for stable division
+    reg [40:0] const_k;  // Max value is 1000000000001 (40 bits)
+    reg [40:0] const_k_reg;
     always @(*) begin
         case (k)
             1: const_k = 11;
@@ -39,13 +42,11 @@ module range_calc #(
     always @(posedge clk) begin
         const_k_reg <= const_k;
     end
-    
-    // Bounds for K: [10^(k-1), 10^k - 1] * const_k  <-- Wait.
-    // The "Invalid IDs" are P = x * (10^k+1).
+
+    // Bounds for K: [10^(k-1), 10^k - 1] * const_k
     // Valid x range for K is [10^(k-1), 10^k - 1].
-    // e.g. K=1: x in [1, 9]. P in [11, 99].
-    // K=2: x in [10, 99]. P in [1010, 9999].
-    reg [63:0] x_min, x_max;
+    // Max x is 999999999999 (40 bits)
+    reg [39:0] x_min, x_max;
     always @(*) begin
         case (k)
             1: begin x_min=1; x_max=9; end
@@ -64,50 +65,50 @@ module range_calc #(
         endcase
     end
 
-    // Divider Interface
+    // Divider Interface - use 40-bit divider
     reg div_start;
-    reg [63:0] div_dividend_1, div_dividend_2;
-    wire [63:0] div_q_1, div_q_2;
-    wire div_done_1, div_done_2;
-    
-    // Two dividers per core? That's 80 dividers total. logic-heavy but fits.
-    // Or reuse 1 divider? Reuse saves area, doubles latency.
-    // 80 dividers * 300 LUTs = 24k. Tight on 25F.
-    // Let's use 1 divider and sequence states.
-    
-    div64 d1 (
+    reg [39:0] div_dividend_1;
+    wire [39:0] div_q_1;
+    wire div_done_1;
+
+    div40 d1 (
         .clk(clk), .rst(rst), .start(div_start),
         .dividend(div_dividend_1), .divisor(const_k),
         .quotient(div_q_1), .done(div_done_1)
     );
-    
+
     reg [2:0] sub_state;
-    reg [63:0] res_start_idx;
-    reg [63:0] res_end_idx;
-    reg [127:0] calc_temp;
+    reg [39:0] res_start_idx;  // Reduced from 64 to 40 bits
+    reg [39:0] res_end_idx;
+    reg [79:0] calc_temp;      // Product of 40-bit values
 
-    // Pipeline registers for breaking up the multiplication
-    reg [63:0] pipe_sum;       // res_start_idx + res_end_idx
-    reg [63:0] pipe_count;     // res_end_idx - res_start_idx + 1
-    (* use_dsp = "yes" *) reg [127:0] pipe_prod1;    // sum * count
-    reg [63:0] pipe_const_k_reg;  // Registered const_k for multiplication
+    // Pipeline registers - reduced bit widths
+    reg [40:0] pipe_sum;       // res_start_idx + res_end_idx (41 bits for carry)
+    reg [40:0] pipe_count;     // res_end_idx - res_start_idx + 1
+    (* use_dsp = "yes" *) reg [81:0] pipe_prod1;    // sum * count (41*41=82 bits)
+    reg [40:0] pipe_const_k_reg;
 
-    // Split 64-bit additions into two 32-bit stages
-    reg [31:0] add_low;
-    reg add_carry;
-    reg [31:0] sub_low;
-    reg sub_borrow;
+    // Split additions into smaller chunks for better timing
+    reg [15:0] add_low;    // 16-bit chunks
+    reg [15:0] add_mid;
+    reg add_carry_low;
+    reg add_carry_mid;
+    reg [15:0] sub_low;
+    reg [15:0] sub_mid;
+    reg sub_borrow_low;
+    reg sub_borrow_mid;
 
     localparam ST_IDLE = 0;
     localparam ST_DIV1 = 1;
     localparam ST_DIV2 = 2;
     localparam ST_CALC1 = 3;
     localparam ST_CALC1B = 4;  // Second stage of addition
-    localparam ST_CALC2 = 5;
-    localparam ST_CALC3 = 6;
-    localparam ST_CALC4 = 7;
-    localparam ST_NEXT = 8;
-    localparam ST_DONE = 9;
+    localparam ST_CALC1C = 5;  // Third stage of addition
+    localparam ST_CALC2 = 6;
+    localparam ST_CALC3 = 7;
+    localparam ST_CALC4 = 8;
+    localparam ST_NEXT = 9;
+    localparam ST_DONE = 10;
     
     always @(posedge clk) begin
         if (rst) begin
@@ -133,14 +134,14 @@ module range_calc #(
                         // Clip with X bounds
                         if (div_q_1 < x_min) res_start_idx <= x_min;
                         else res_start_idx <= div_q_1;
-                        
+
                         // Setup Div 2: Floor(End / Const)
-                        div_dividend_1 <= range_end;
+                        div_dividend_1 <= range_end[39:0];
                         div_start <= 1;
                         state <= ST_DIV2;
                     end
                 end
-                
+
                 ST_DIV2: begin
                     div_start <= 0;
                     if (div_done_1) begin
@@ -154,9 +155,9 @@ module range_calc #(
 
                 ST_CALC1: begin
                     if (res_start_idx <= res_end_idx) begin
-                        // First pipeline stage: calculate lower 32 bits of additions
-                        {add_carry, add_low} <= {1'b0, res_start_idx[31:0]} + {1'b0, res_end_idx[31:0]};
-                        {sub_borrow, sub_low} <= {1'b0, res_end_idx[31:0]} - {1'b0, res_start_idx[31:0]} + 33'd1;
+                        // First pipeline stage: calculate bits [15:0]
+                        {add_carry_low, add_low} <= {1'b0, res_start_idx[15:0]} + {1'b0, res_end_idx[15:0]};
+                        {sub_borrow_low, sub_low} <= {1'b0, res_end_idx[15:0]} - {1'b0, res_start_idx[15:0]} + 17'd1;
                         pipe_const_k_reg <= const_k;
                         state <= ST_CALC1B;
                     end else begin
@@ -170,9 +171,16 @@ module range_calc #(
                 end
 
                 ST_CALC1B: begin
-                    // Second pipeline stage: calculate upper 32 bits and complete additions
-                    pipe_sum <= {res_start_idx[63:32] + res_end_idx[63:32] + {31'b0, add_carry}, add_low};
-                    pipe_count <= {res_end_idx[63:32] - res_start_idx[63:32] - {31'b0, sub_borrow}, sub_low};
+                    // Second pipeline stage: calculate bits [31:16]
+                    {add_carry_mid, add_mid} <= {1'b0, res_start_idx[31:16]} + {1'b0, res_end_idx[31:16]} + {16'b0, add_carry_low};
+                    {sub_borrow_mid, sub_mid} <= {1'b0, res_end_idx[31:16]} - {1'b0, res_start_idx[31:16]} - {16'b0, sub_borrow_low};
+                    state <= ST_CALC1C;
+                end
+
+                ST_CALC1C: begin
+                    // Third pipeline stage: calculate bits [39:32] and complete
+                    pipe_sum <= {res_start_idx[39:32] + res_end_idx[39:32] + {7'b0, add_carry_mid}, add_mid, add_low};
+                    pipe_count <= {res_end_idx[39:32] - res_start_idx[39:32] - {7'b0, sub_borrow_mid}, sub_mid, sub_low};
                     state <= ST_CALC2;
                 end
 
@@ -183,14 +191,15 @@ module range_calc #(
                 end
 
                 ST_CALC3: begin
-                    // Third pipeline stage: second multiplication (* const_k)
+                    // Fourth pipeline stage: second multiplication (* const_k)
                     calc_temp <= pipe_prod1 * pipe_const_k_reg;
                     state <= ST_CALC4;
                 end
 
                 ST_CALC4: begin
-                    // Fourth pipeline stage: divide by 2 and add to sum
-                    sum_out <= sum_out + (calc_temp >> 1);
+                    // Fifth pipeline stage: divide by 2 and add to sum
+                    // calc_temp is 80 bits, shift right 1, truncate to fit
+                    sum_out <= sum_out + {24'd0, calc_temp[39:1]};
 
                     if (k >= MAX_K) state <= ST_DONE;
                     else begin
@@ -201,8 +210,8 @@ module range_calc #(
                 
                 ST_NEXT: begin
                     // 1 Cycle delay to latch new K/Const/Bounds
-                     // Setup Div 1 for next K
-                    div_dividend_1 <= range_start + const_k - 1;
+                    // Setup Div 1 for next K
+                    div_dividend_1 <= range_start[39:0] + const_k[39:0] - 40'd1;
                     div_start <= 1;
                     state <= ST_DIV1;
                 end
