@@ -29,8 +29,8 @@ module tb;
     end
 
     initial begin
-        $dumpfile("day2.vcd");
-        $dumpvars(0, tb);
+        // $dumpfile("day2.vcd");
+        // $dumpvars(0, tb);
         rst = 1;
         #100;
         rst = 0;

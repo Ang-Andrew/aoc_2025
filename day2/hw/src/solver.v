@@ -13,72 +13,83 @@ module solver #(
     reg [127:0] ranges [0:RANGE_COUNT-1];
     initial $readmemh(MEM_FILE, ranges);
     
-    // 2. Instantiate Cores
-    wire [63:0] core_sums [0:RANGE_COUNT-1];
-    wire [RANGE_COUNT-1:0] core_dones;
+    // 2. Single Core Instance
+    reg core_start;
+    reg [63:0] core_start_val;
+    reg [63:0] core_end_val;
+    wire [63:0] core_sum_out;
+    wire core_done;
     
-    // Start signal
-    reg start_cores;
-    
-    genvar i;
-    generate
-        for (i=0; i<RANGE_COUNT; i=i+1) begin : cores
-            range_calc #(
-                .MAX_K(MAX_K)
-            ) rc (
-                .clk(clk),
-                .rst(rst),
-                .start(start_cores),
-                .range_start(ranges[i][63:0]),
-                .range_end(ranges[i][127:64]),
-                .sum_out(core_sums[i]),
-                .done(core_dones[i])
-            );
-        end
-    endgenerate
-    
+    range_calc #(
+        .MAX_K(MAX_K)
+    ) rc (
+        .clk(clk),
+        .rst(rst),
+        .start(core_start),
+        .range_start(core_start_val),
+        .range_end(core_end_val),
+        .sum_out(core_sum_out),
+        .done(core_done)
+    );
+
     // 3. Control & Accumulation
     reg [2:0] state;
-    integer j;
+    integer range_idx;
+    reg [63:0] temp_sum;
     
-    localparam S_WAIT_START = 0;
-    localparam S_RUN = 1;
-    localparam S_SUM = 2;
-    localparam S_DONE = 3;
+    localparam S_IDLE = 0;
+    localparam S_START_RANGE = 1;
+    localparam S_WAIT_BUSY = 2;
+    localparam S_WAIT_RANGE = 3;
+    localparam S_ACCUM = 4;
+    localparam S_NEXT = 5;
+    localparam S_DONE = 6;
     
     always @(posedge clk) begin
         if (rst) begin
-            state <= S_WAIT_START;
-            total_sum <= 0;
+            state <= S_IDLE;
             done <= 0;
-            start_cores <= 0;
+            total_sum <= 0;
+            range_idx <= 0;
+            core_start <= 0;
         end else begin
             case (state)
-                S_WAIT_START: begin
-                    // Wait 1 cycle for reset to settle?
-                    start_cores <= 1;
-                    state <= S_RUN;
+                S_IDLE: begin
+                    range_idx <= 0;
+                    total_sum <= 0;
+                    state <= S_START_RANGE;
                 end
                 
-                S_RUN: begin
-                    start_cores <= 0;
-                    if (&core_dones) begin // All Done
-                        state <= S_SUM;
+                S_START_RANGE: begin
+                    if (range_idx < RANGE_COUNT) begin
+                        core_start_val <= ranges[range_idx][63:0];
+                        core_end_val <= ranges[range_idx][127:64];
+                        core_start <= 1;
+                        state <= S_WAIT_BUSY;
+                    end else begin
+                        state <= S_DONE;
                     end
                 end
                 
-                S_SUM: begin
-                    // Sum all outputs (Combinational loop ok since done)
-                    // Or registered?
-                    // Let's do a simple loop sum. 38 items. Ripple adder might be slow but it's 1 cycle.
-                    // Synthesizer will tree it.
-                    reg [63:0] temp_sum;
-                    temp_sum = 0;
-                    for (j=0; j<RANGE_COUNT; j=j+1) begin
-                        temp_sum = temp_sum + core_sums[j];
+                S_WAIT_BUSY: begin
+                    core_start <= 0;
+                    state <= S_WAIT_RANGE;
+                end
+                
+                S_WAIT_RANGE: begin
+                    if (core_done) begin
+                        state <= S_ACCUM;
                     end
-                    total_sum <= temp_sum;
-                    state <= S_DONE;
+                end
+                
+                S_ACCUM: begin
+                    total_sum <= total_sum + core_sum_out;
+                    state <= S_NEXT;
+                end
+                
+                S_NEXT: begin
+                    range_idx <= range_idx + 1;
+                    state <= S_START_RANGE;
                 end
                 
                 S_DONE: begin

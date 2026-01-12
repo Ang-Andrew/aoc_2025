@@ -11,11 +11,12 @@ module range_calc #(
 );
 
     reg [3:0] k;
-    reg [2:0] state;
-    
+    reg [3:0] state;
+
     // Multipliers for K=1..12: (10^k + 1)
     // We can store them in a LUT case statement to save logic vs calculating
     reg [63:0] const_k;
+    reg [63:0] const_k_reg;  // Registered version for stable division
     always @(*) begin
         case (k)
             1: const_k = 11;
@@ -30,8 +31,13 @@ module range_calc #(
             10: const_k = 10000000001;
             11: const_k = 100000000001;
             12: const_k = 1000000000001;
-            default: const_k = 1; 
+            default: const_k = 1;
         endcase
+    end
+
+    // Register const_k for stable use in division
+    always @(posedge clk) begin
+        const_k_reg <= const_k;
     end
     
     // Bounds for K: [10^(k-1), 10^k - 1] * const_k  <-- Wait.
@@ -70,21 +76,38 @@ module range_calc #(
     // Let's use 1 divider and sequence states.
     
     div64 d1 (
-        .clk(clk), .rst(rst), .start(div_start), 
-        .dividend(div_dividend_1), .divisor(const_k), 
+        .clk(clk), .rst(rst), .start(div_start),
+        .dividend(div_dividend_1), .divisor(const_k),
         .quotient(div_q_1), .done(div_done_1)
     );
     
     reg [2:0] sub_state;
     reg [63:0] res_start_idx;
     reg [63:0] res_end_idx;
-    
+    reg [127:0] calc_temp;
+
+    // Pipeline registers for breaking up the multiplication
+    reg [63:0] pipe_sum;       // res_start_idx + res_end_idx
+    reg [63:0] pipe_count;     // res_end_idx - res_start_idx + 1
+    (* use_dsp = "yes" *) reg [127:0] pipe_prod1;    // sum * count
+    reg [63:0] pipe_const_k_reg;  // Registered const_k for multiplication
+
+    // Split 64-bit additions into two 32-bit stages
+    reg [31:0] add_low;
+    reg add_carry;
+    reg [31:0] sub_low;
+    reg sub_borrow;
+
     localparam ST_IDLE = 0;
     localparam ST_DIV1 = 1;
     localparam ST_DIV2 = 2;
-    localparam ST_CALC = 3;
-    localparam ST_NEXT = 4;
-    localparam ST_DONE = 5;
+    localparam ST_CALC1 = 3;
+    localparam ST_CALC1B = 4;  // Second stage of addition
+    localparam ST_CALC2 = 5;
+    localparam ST_CALC3 = 6;
+    localparam ST_CALC4 = 7;
+    localparam ST_NEXT = 8;
+    localparam ST_DONE = 9;
     
     always @(posedge clk) begin
         if (rst) begin
@@ -97,15 +120,10 @@ module range_calc #(
             case (state)
                 ST_IDLE: begin
                     if (start) begin
-                        state <= ST_DIV1;
                         k <= 1;
                         sum_out <= 0;
                         done <= 0;
-                        
-                        // Setup Div 1: Ceil(Start / Const)
-                        // Actually: floor((Start + Const - 1) / Const)
-                        div_dividend_1 <= range_start + const_k - 1;
-                        div_start <= 1;
+                        state <= ST_NEXT;  // Go to NEXT first to let const_k_reg settle
                     end
                 end
                 
@@ -129,49 +147,51 @@ module range_calc #(
                         // Clip
                         if (div_q_1 > x_max) res_end_idx <= x_max;
                         else res_end_idx <= div_q_1;
-                        
-                        state <= ST_CALC;
+
+                        state <= ST_CALC1;
                     end
                 end
-                
-                ST_CALC: begin
+
+                ST_CALC1: begin
                     if (res_start_idx <= res_end_idx) begin
-                        // Sum arithmetic progression
-                        // Val = id * Const.
-                        // Sum = (id_start + id_end) * count / 2 * Const.
-                        // Count = end - start + 1.
-                        // Sum += (res_start_idx + res_end_idx) * (res_end_idx - res_start_idx + 1) / 2 * const_k;
-                        
-                        // We use a multiply-accumulate?
-                        // This math is 64-bit mults. might need cycles or DSP inference.
-                        // (S+E) is 65 bits. Count is 64. Result 128 bit. 
-                        // Then * const_k (64 bit). Result 192 bit.
-                        // This logic is HUGE.
-                        // Wait, do we need full precision? Total sum fits in 64 bits (Day 2 result: 32e9).
-                        // 32e9 fits in 35 bits.
-                        // The inputs are ~10^10.
-                        // S+E ~ 2*10^10.
-                        // Count ~ varies.
-                        // Maybe simpler:
-                        // for range_calc, we can just assume Python verified logic fits? 
-                        // Verilog `*` will synthesize DSPs or huge logic. 
-                        // "Logic-only solutions".
-                        // Is there a simpler way?
-                        // Invalid IDs are sparse.
-                        // Actually no, for K=1, indices are 1..9.
-                        // K=10, indices 10^9..10^10.
-                        // The sum is huge.
-                        // Wait, Day 2 result is only 32 billion?
-                        // If ranges are small, maybe count is small?
-                        // If Range is "100-200", maybe 0 hits.
-                        // The sum logic: `sum_out <= sum_out + ...`
-                        // I'll trust standard `*` synthesis for now, since we saved Area on Generator/Divs.
-                        // ECP5 has 18x18 multipliers. 64x64 is expensive but doable.
-                        // Or I iterate.
-                        // I'll write the expression. If synthesis fails, I'd optimize.
-                        sum_out <= sum_out + ((res_start_idx + res_end_idx) * (res_end_idx - res_start_idx + 1) / 2) * const_k;
+                        // First pipeline stage: calculate lower 32 bits of additions
+                        {add_carry, add_low} <= {1'b0, res_start_idx[31:0]} + {1'b0, res_end_idx[31:0]};
+                        {sub_borrow, sub_low} <= {1'b0, res_end_idx[31:0]} - {1'b0, res_start_idx[31:0]} + 33'd1;
+                        pipe_const_k_reg <= const_k;
+                        state <= ST_CALC1B;
+                    end else begin
+                        // No contribution, skip to next
+                        if (k >= MAX_K) state <= ST_DONE;
+                        else begin
+                            k <= k + 1;
+                            state <= ST_NEXT;
+                        end
                     end
-                    
+                end
+
+                ST_CALC1B: begin
+                    // Second pipeline stage: calculate upper 32 bits and complete additions
+                    pipe_sum <= {res_start_idx[63:32] + res_end_idx[63:32] + {31'b0, add_carry}, add_low};
+                    pipe_count <= {res_end_idx[63:32] - res_start_idx[63:32] - {31'b0, sub_borrow}, sub_low};
+                    state <= ST_CALC2;
+                end
+
+                ST_CALC2: begin
+                    // Third pipeline stage: first multiplication (sum * count)
+                    pipe_prod1 <= pipe_sum * pipe_count;
+                    state <= ST_CALC3;
+                end
+
+                ST_CALC3: begin
+                    // Third pipeline stage: second multiplication (* const_k)
+                    calc_temp <= pipe_prod1 * pipe_const_k_reg;
+                    state <= ST_CALC4;
+                end
+
+                ST_CALC4: begin
+                    // Fourth pipeline stage: divide by 2 and add to sum
+                    sum_out <= sum_out + (calc_temp >> 1);
+
                     if (k >= MAX_K) state <= ST_DONE;
                     else begin
                         k <= k + 1;
@@ -189,6 +209,9 @@ module range_calc #(
                 
                 ST_DONE: begin
                     done <= 1;
+                    if (!start) begin  // Wait for start to go low, then return to IDLE
+                        state <= ST_IDLE;
+                    end
                 end
             endcase
          end

@@ -14,6 +14,14 @@ module div64 (
     reg [6:0] count;
     reg busy;
 
+    wire [63:0] r_next;
+    wire [63:0] q_next;
+    wire do_sub;
+
+    assign r_next = {r_temp[62:0], q_temp[63]};
+    assign do_sub = (r_next >= b_temp);
+    assign q_next = {q_temp[62:0], (busy && count > 0 && do_sub) ? 1'b1 : 1'b0};
+
     always @(posedge clk) begin
         if (rst) begin
             done <= 0;
@@ -47,16 +55,13 @@ module div64 (
             end
         end else if (busy) begin
             if (count > 0) begin
-                // Shift Left {r, q}
-                r_temp = {r_temp[62:0], q_temp[63]};
-                q_temp = {q_temp[62:0], 1'b0};
-                
-                // Subtract?
-                if (r_temp >= b_temp) begin
-                    r_temp = r_temp - b_temp;
-                    q_temp[0] = 1'b1;
+                // Update remainder and quotient
+                if (do_sub) begin
+                    r_temp <= r_next - b_temp;
+                end else begin
+                    r_temp <= r_next;
                 end
-                
+                q_temp <= q_next;
                 count <= count - 1;
             end else begin
                 quotient <= q_temp;

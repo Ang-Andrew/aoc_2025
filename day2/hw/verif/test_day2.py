@@ -72,14 +72,19 @@ async def test_day2_solution(dut):
     # 4. Wait for Done
     if hasattr(dut, 'done'):
         await RisingEdge(dut.done)
-        await RisingEdge(dut.clk) # One more for stability
+        # Use the correct clock for stability wait
+        if hasattr(dut, 'clk_250'):
+             await RisingEdge(dut.clk_250)
+        elif hasattr(dut, 'clk'):
+             await RisingEdge(dut.clk)
     else:
         # Fallback or specific handling
         await Timer(100, units='us')
 
     
     # 5. Check Result
-    actual_val = int(dut.total_sum_out.value)
+    # Access the internal wire 'total_sum' since we removed the port.
+    actual_val = int(dut.total_sum.value)
     
     dut._log.info(f"FPGA Result: {actual_val}")
     
