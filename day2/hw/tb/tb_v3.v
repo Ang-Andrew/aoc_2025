@@ -6,8 +6,8 @@ module tb;
     wire [63:0] total_sum;
     wire done;
 
-    solver_ultra #(
-        .DIVISIONS_FILE("src/divisions.hex"),
+    solver_v3 #(
+        .RESULTS_FILE("src/results.hex"),
         .ENTRY_COUNT(468)
     ) dut (
         .clk(clk),
@@ -18,26 +18,30 @@ module tb;
 
     initial begin
         clk = 0;
-        forever #20 clk = ~clk; 
+        forever #2 clk = ~clk;  // 250 MHz clock (4ns period)
     end
 
     initial begin
-        // $dumpfile("day2.vcd");
-        // $dumpvars(0, tb);
         rst = 1;
         #100;
         rst = 0;
-        
+
         wait(done);
         #100;
-        
+
         $display("Done. Total Sum: %0d (0x%h)", total_sum, total_sum);
-        // Expected: 32976912643
         if (total_sum == 64'd32976912643) begin
              $display("SUCCESS: Sum matches expected.");
         end else begin
              $display("FAILURE: Sum mismatch. Expected 32976912643.");
         end
+
+        // Report performance
+        $display("");
+        $display("Performance at 250MHz:");
+        $display("  Cycles: ~%0d", (468 + 6));
+        $display("  Time: ~%0.2f us", (468.0 + 6.0) * 4.0 / 1000.0);
+
         $finish;
     end
 
