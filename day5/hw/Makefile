@@ -1,5 +1,12 @@
 # Makefile for Day 5 HW
 
+PROJ = day5
+TOP_MODULE = solution
+IMPL_SOURCES = src/solution.v
+OUTPUT_DIR = output
+
+include ../../common/common.mk
+
 SRC_DIR = src
 SIM_DIR = sim
 BUILD_DIR = build
@@ -21,7 +28,8 @@ $(TARGET): $(SRCS) $(TB_SRC)
 run: $(TARGET)
 	$(DOCKER_CMD) vvp $(TARGET)
 
-clean:
+# Clean is handled by common.mk but we can add sim-specific clean
+clean-sim:
 	rm -rf $(BUILD_DIR)
 
 # Cocotb Test
@@ -31,7 +39,7 @@ test:
 # Docker helpers (added by generate_tests.py)
 DOCKER_IMAGE ?= ecp5-toolchain
 WORKSPACE_ROOT ?= $(shell cd ../.. && pwd)
-REL_PATH ?= $(shell python3 -c "import os; print(os.path.relpath('$(CURDIR)', '$(WORKSPACE_ROOT)'))")
+REL_PATH ?= $(shell python3 -c "import os; print(os.print(os.path.relpath('$(CURDIR)', '$(WORKSPACE_ROOT)')))")
 DOCKER_CMD ?= docker run --rm -v $(WORKSPACE_ROOT):/workspace -w /workspace/$(REL_PATH) $(DOCKER_IMAGE)
 
 # Runs Icarus Verilog Simulation

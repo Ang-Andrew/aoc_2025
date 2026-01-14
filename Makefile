@@ -39,3 +39,13 @@ $(PROJECT_TESTS):
 	$(MAKE) -C $(basename $@) test
 
 test: $(PROJECT_TESTS)
+
+# Implementation for all projects
+PROJECT_IMPLS := $(addsuffix .impl, $(PROJECTS))
+
+.PHONY: $(PROJECT_IMPLS) impl-all
+
+$(PROJECT_IMPLS):
+	$(MAKE) -C $(basename $@) impl
+
+impl-all: $(PROJECT_IMPLS)

@@ -1,34 +1,19 @@
-PROJ=ao4_day4
-TOP=solver
-CONSTR=constraints.lpf
-SRC=src/solver.v
+PROJ = ao4_day4
+TOP_MODULE = solver
+LPF_FILE = constraints.lpf
+IMPL_SOURCES = src/solver.v
+OUTPUT_DIR = output
+NEXTPNR_FLAGS = --lpf-allow-unconstrained --placed-svg $(OUTPUT_DIR)/$(PROJ)_placed.svg --routed-svg $(OUTPUT_DIR)/$(PROJ)_routed.svg
 
-# Default to 25k ECP5 (e.g. Colorlight i5, ULX3S)
-DEVICE=25k
-PACKAGE=CABGA381
+include ../../common/common.mk
 
-# Tools
-YOSYS=yosys
-NEXTPNR=nextpnr-ecp5
-ECPPACK=ecppack
+.PHONY: all clean test sim images
 
-.PHONY: all clean test sim test_verilog
+all: impl images
 
-all: $(PROJ).bit images
-
-$(PROJ).json: $(SRC)
-	$(YOSYS) -p "synth_ecp5 -top $(TOP) -json $@" $<
-
-# Generates bitstream config AND images
-$(PROJ).config: $(PROJ).json
-	$(NEXTPNR) --$(DEVICE) --package $(PACKAGE) --json $< --lpf $(CONSTR) --textcfg $@ --placed-svg $(PROJ)_placed.svg --routed-svg $(PROJ)_routed.svg --lpf-allow-unconstrained
-
-$(PROJ).bit: $(PROJ).config
-	$(ECPPACK) $< $@
-
-images: $(PROJ).config
-	@echo "Generated placement image: $(PROJ)_placed.svg"
-	@echo "Generated routing image: $(PROJ)_routed.svg"
+images: $(OUTPUT_DIR)/$(PROJ)_out.config
+	@echo "Generated placement image: $(OUTPUT_DIR)/$(PROJ)_placed.svg"
+	@echo "Generated routing image: $(OUTPUT_DIR)/$(PROJ)_routed.svg"
 
 clean:
 	rm -f *.json *.config *.bit *.svg *.svf

@@ -41,7 +41,8 @@ module solution (
     
     // Top 3 Tracking
     reg [15:0] top1, top2, top3;
-    
+    reg [15:0] s; // Temp variable for scanning
+
     always @(posedge clk) begin
         if (rst) begin
             state <= S_INIT;
@@ -134,7 +135,6 @@ module solution (
                     // Scan all nodes. If root, check size.
                     if (parent[i] == i) begin
                         // Is Root
-                        reg [15:0] s;
                         s = sz[i];
                         
                         // Update Top 3

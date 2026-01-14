@@ -2,6 +2,7 @@ PROJ = day3
 include ../../common/common.mk
 IMPL_SOURCES = src/top.v src/tree_solver.v src/rom_feeder.v
 LPF_FILE = data/day3.lpf
+NEXTPNR_FLAGS = --lpf-allow-unconstrained
 
 .PHONY: sim
 

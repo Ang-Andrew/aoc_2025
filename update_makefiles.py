@@ -1,9 +1,12 @@
-# Makefile for Day 12 HW
+import os
 
-PROJ = solution
+days = [6, 7, 8, 9, 10, 11]
+
+template = """# Makefile for Day {day} HW
+
+PROJ = day{day}
 TOP_MODULE = solution
 IMPL_SOURCES = src/solution.v
-LPF_FILE = src/ulx3s_v20.lpf
 OUTPUT_DIR = output
 
 include ../../common/common.mk
@@ -18,7 +21,7 @@ TB_SRC = $(SIM_DIR)/tb.v
 # Output binary
 TARGET = $(BUILD_DIR)/sim.out
 
-.PHONY: all clean run sim verilator
+.PHONY: all clean run sim
 
 all: $(TARGET)
 
@@ -29,14 +32,16 @@ $(TARGET): $(SRCS) $(TB_SRC)
 run: $(TARGET)
 	$(DOCKER_CMD) vvp $(TARGET)
 
-# Verilator Simulation
-verilator:
-	rm -rf obj_dir
-	$(DOCKER_CMD) verilator --cc --exe --build -j 0 -Wall --trace -Isrc src/solution.v sim/sim_main.cpp
-	$(DOCKER_CMD) ./obj_dir/Vsolution
+# Cocotb Test
+test:
+	$(DOCKER_CMD) make -f run_cocotb.mk
 
-# Test (Uses Verilator for speed)
-test: sim
+sim: run
+"""
 
-# Alias sim to verilator
-sim: verilator
+for day in days:
+    path = f"day{day}/hw/Makefile"
+    content = template.format(day=day)
+    with open(path, "w") as f:
+        f.write(content)
+    print(f"Updated {path}")

@@ -1,5 +1,5 @@
 module rom_feeder #(
-    parameter FILENAME = "input.hex"
+    parameter FILENAME = "data/input.hex"
 )(
     input wire clk,
     input wire [7:0] addr, 

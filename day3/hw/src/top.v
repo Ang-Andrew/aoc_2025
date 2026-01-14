@@ -21,14 +21,24 @@ module top (
         .data(rom_data)
     );
     
+    // Register ROM output to break critical path at 250MHz
+    // ROM clock-to-Q (5.83ns) exceeds 4ns budget
+    reg [639:0] rom_data_reg;
+    reg valid_rom;
+
+    always @(posedge clk) begin
+        rom_data_reg <= rom_data;
+        valid_rom <= valid_pulse;
+    end
+
     // We assume 200 lines max (addr 8 bit is enough)
-    
+
     tree_solver ts (
         .clk(clk),
         .rst(rst),
-        .valid_in(valid_pulse),
-        .data_in(rom_data[511:0]),
-        .mask_in(rom_data[639:512]),
+        .valid_in(valid_rom),
+        .data_in(rom_data_reg[511:0]),
+        .mask_in(rom_data_reg[639:512]),
         .total_score(score),
         .done()
     );

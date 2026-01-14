@@ -5,14 +5,12 @@ module tb;
     reg clk;
     reg rst;
     wire [63:0] splitters_hit;
-    wire [63:0] active_count;
     wire done;
 
     solution uut (
         .clk(clk),
         .rst(rst),
         .splitters_hit(splitters_hit),
-        .active_count(active_count),
         .done(done)
     );
 
@@ -35,7 +33,6 @@ module tb;
         $display("--------------------------------");
         $display("Simulation Done.");
         $display("Splitters Hit: %d", splitters_hit);
-        $display("Active Beams (Bottom): %d", active_count);
         $display("--------------------------------");
         $finish;
     end

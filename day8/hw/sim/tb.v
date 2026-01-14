@@ -4,13 +4,13 @@ module tb;
 
     reg clk;
     reg rst;
-    wire [63:0] product_max;
+    wire [63:0] product;
     wire done;
 
     solution uut (
         .clk(clk),
         .rst(rst),
-        .product_max(product_max),
+        .product(product),
         .done(done)
     );
 
@@ -32,7 +32,7 @@ module tb;
         
         $display("--------------------------------");
         $display("Simulation Done.");
-        $display("Max Product: %d", product_max);
+        $display("Max Product: %d", product);
         $display("--------------------------------");
         $finish;
     end

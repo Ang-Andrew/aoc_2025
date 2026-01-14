@@ -180,14 +180,18 @@ module solution (
                     // 'collected' is now stable.
                     if (current_op == "+") begin
                         calc_res = 0;
-                        for (k=0; k<collected_count; k=k+1) begin
-                            calc_res = calc_res + collected[k];
+                        for (k=0; k<1024; k=k+1) begin
+                            if (k < collected_count) begin
+                                calc_res = calc_res + collected[k];
+                            end
                             //$display("  Add collected[%d] = %d", k, collected[k]);
                         end
                     end else if (current_op == "*") begin
                         calc_res = 1;
-                        for (k=0; k<collected_count; k=k+1) begin
-                            calc_res = calc_res * collected[k];
+                        for (k=0; k<1024; k=k+1) begin
+                            if (k < collected_count) begin
+                                calc_res = calc_res * collected[k];
+                            end
                             //$display("  Mult collected[%d] = %d", k, collected[k]);
                         end
                     end else begin

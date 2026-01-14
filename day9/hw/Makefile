@@ -1,5 +1,12 @@
 # Makefile for Day 9 HW
 
+PROJ = day9
+TOP_MODULE = solution
+IMPL_SOURCES = src/solution.v
+OUTPUT_DIR = output
+
+include ../../common/common.mk
+
 SRC_DIR = src
 SIM_DIR = sim
 BUILD_DIR = build
@@ -10,7 +17,7 @@ TB_SRC = $(SIM_DIR)/tb.v
 # Output binary
 TARGET = $(BUILD_DIR)/sim.out
 
-.PHONY: all clean run
+.PHONY: all clean run sim
 
 all: $(TARGET)
 
@@ -21,18 +28,8 @@ $(TARGET): $(SRCS) $(TB_SRC)
 run: $(TARGET)
 	$(DOCKER_CMD) vvp $(TARGET)
 
-clean:
-	rm -rf $(BUILD_DIR)
-
 # Cocotb Test
 test:
 	$(DOCKER_CMD) make -f run_cocotb.mk
 
-# Docker helpers (added by generate_tests.py)
-DOCKER_IMAGE ?= ecp5-toolchain
-WORKSPACE_ROOT ?= $(shell cd ../.. && pwd)
-REL_PATH ?= $(shell python3 -c "import os; print(os.path.relpath('$(CURDIR)', '$(WORKSPACE_ROOT)'))")
-DOCKER_CMD ?= docker run --rm -v $(WORKSPACE_ROOT):/workspace -w /workspace/$(REL_PATH) $(DOCKER_IMAGE)
-
-# Runs Icarus Verilog Simulation
 sim: run
