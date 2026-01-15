@@ -1,7 +1,7 @@
 PROJ = ao4_day4
 TOP_MODULE = solver
 LPF_FILE = constraints.lpf
-IMPL_SOURCES = src/solver.v
+IMPL_SOURCES = src/line_buffer_draft.v src/solver.v
 OUTPUT_DIR = output
 NEXTPNR_FLAGS = --lpf-allow-unconstrained --placed-svg $(OUTPUT_DIR)/$(PROJ)_placed.svg --routed-svg $(OUTPUT_DIR)/$(PROJ)_routed.svg
 
