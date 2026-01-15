@@ -5,11 +5,11 @@
 module top (
     input wire clk,
     input wire rst,
-    output reg [31:0] score
+    output reg [31:0] score = 32'b0
 );
 
     // Gray code counter (fewer bit transitions = faster timing)
-    reg [7:0] gray_addr;
+    reg [7:0] gray_addr = 8'b0;
     wire [7:0] binary_addr = gray_to_binary(gray_addr);
 
     function [7:0] gray_to_binary;
@@ -25,16 +25,19 @@ module top (
     function [7:0] increment_gray;
         input [7:0] gray;
         reg [8:0] bin;
+        integer i;
         begin
-            // Convert to binary
+            // Convert Gray to binary
             bin[8] = 1'b0;
             bin[7] = gray[7];
-            bin[6:0] = gray[6:0] ^ {bin[7], bin[7:1]};
-            // Increment
+            for (i = 6; i >= 0; i = i - 1)
+                bin[i] = gray[i] ^ bin[i+1];
+            // Increment binary
             bin = bin + 1;
-            // Convert back to Gray
+            // Convert binary back to Gray
             increment_gray[7] = bin[7];
-            increment_gray[6:0] = bin[7:1] ^ bin[6:0];
+            for (i = 6; i >= 0; i = i - 1)
+                increment_gray[i] = bin[i+1] ^ bin[i];
         end
     endfunction
 
@@ -50,20 +53,19 @@ module top (
     );
 
     // Pipeline stage 1: Register ROM output
-    reg [31:0] rom_data_pipe;
-    reg valid_rom;
+    reg [31:0] rom_data_pipe = 32'b0;
+    reg valid_rom = 1'b0;
+    reg valid_rom_d = 1'b0;
 
     always @(posedge clk) begin
         rom_data_pipe <= rom_data;
         valid_rom <= valid_rom_d;
     end
 
-    reg valid_rom_d;
-
     // Pipeline stage 2: Low 16-bit accumulation with carry
-    reg [16:0] acc_low;
-    reg [31:16] rom_high_pipe;
-    reg valid_acc_low;
+    reg [16:0] acc_low = 17'b0;
+    reg [31:16] rom_high_pipe = 16'b0;
+    reg valid_acc_low = 1'b0;
 
     always @(posedge clk) begin
         if (rst) begin
@@ -77,7 +79,11 @@ module top (
     end
 
     // Pipeline stage 3: High 16-bit accumulation
-    reg [31:0] accumulator;
+    reg [31:0] accumulator = 32'b0;
+
+    initial begin
+        score = 32'b0;
+    end
 
     always @(posedge clk) begin
         if (rst) begin
@@ -92,15 +98,29 @@ module top (
         score <= accumulator;
     end
 
-    // Gray code counter: only 1 bit changes per cycle
+    // Binary counter for termination (simple and clean)
+    // Separate from Gray code ROM addressing
+    reg [8:0] read_count = 9'b0;
+    reg [2:0] drain_count = 3'b0;
+
     always @(posedge clk) begin
         if (rst) begin
             gray_addr <= 8'b0;
+            read_count <= 9'b0;
+            drain_count <= 3'b0;
             valid_rom_d <= 1'b0;
-        end else if (binary_addr < 8'd199) begin
+        end else if (read_count < 9'd200) begin
+            // Reading phase: increment counter and ROM address
             gray_addr <= increment_gray(gray_addr);
+            read_count <= read_count + 1;
             valid_rom_d <= 1'b1;
+            drain_count <= 3'b0;  // Reset drain counter
+        end else if (drain_count < 3'd3) begin
+            // Drain phase: keep valid_rom_d high for pipeline to finish
+            valid_rom_d <= 1'b1;
+            drain_count <= drain_count + 1;
         end else begin
+            // Stop
             valid_rom_d <= 1'b0;
         end
     end
