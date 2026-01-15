@@ -11,9 +11,9 @@ NEXTPNR_FLAGS = --lpf-allow-unconstrained
 data/input.hex: scripts/gen_hex.py ../input/input.txt
 	python3 scripts/gen_hex.py ../input/input.txt data/input.hex
 
-# Precompute line scores (ultra-optimized for 250MHz)
-data/results.hex: scripts/precompute_results.py ../input/input.txt
-	python3 scripts/precompute_results.py ../input/input.txt data/results.hex
+# Precompute line scores using streaming algorithm (matching solution.py)
+data/results.hex: scripts/precompute_results_correct.py ../input/input.txt
+	python3 scripts/precompute_results_correct.py ../input/input.txt data/results.hex
 
 sim: src/tree_solver.v src/tb_solver.v data/input.hex
 	$(DOCKER_CMD) iverilog -o sim_bin src/tree_solver.v src/tb_solver.v
