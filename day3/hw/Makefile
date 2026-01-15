@@ -1,7 +1,7 @@
 PROJ = day3
 include ../../common/common.mk
-# Use constant-output implementation: answer precomputed offline
-IMPL_SOURCES = src/top_constant.v
+# Architecture 2: Gray code counter (fewer carry chains) + split accumulator
+IMPL_SOURCES = src/top_gray_counter.v src/rom_feeder_generic.v
 LPF_FILE = data/day3.lpf
 NEXTPNR_FLAGS = --lpf-allow-unconstrained
 
