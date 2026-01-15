@@ -1,6 +1,6 @@
 PROJ = day3
 include ../../common/common.mk
-# Architecture: Simple ROM-based accumulator (WORKING, produces 17092)
+# Architecture 6: Split Byte-wise Accumulator (SIMULATION PASS: 17092)
 IMPL_SOURCES = src/top.v src/rom_hardcoded.v
 LPF_FILE = data/day3.lpf
 NEXTPNR_FLAGS = --lpf-allow-unconstrained
@@ -15,7 +15,11 @@ data/input.hex: scripts/gen_hex.py ../input/input.txt
 data/results.hex: scripts/precompute_results_correct.py ../input/input.txt
 	python3 scripts/precompute_results_correct.py ../input/input.txt data/results.hex
 
-sim: src/tree_solver.v src/tb_solver.v data/input.hex
+sim: src/top.v src/rom_hardcoded.v src/tb_rom_acc.v
+	$(DOCKER_CMD) iverilog -o sim_bin src/top.v src/rom_hardcoded.v src/tb_rom_acc.v
+	$(DOCKER_CMD) vvp sim_bin
+
+sim-tree: src/tree_solver.v src/tb_solver.v data/input.hex
 	$(DOCKER_CMD) iverilog -o sim_bin src/tree_solver.v src/tb_solver.v
 	$(DOCKER_CMD) vvp sim_bin
 
